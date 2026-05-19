@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, ReactNode } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  Cell, PieChart, Pie
+  Cell, PieChart, Pie, LineChart, Line
 } from 'recharts';
 import { 
   TrendingUp, 
@@ -12,7 +12,8 @@ import {
   Download,
   CheckCircle2,
   Info,
-  Database
+  Database,
+  Calendar
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -28,21 +29,79 @@ export default function App() {
   const [appsScriptUrl, setAppsScriptUrl] = useState<string>('');
   const [showSettings, setShowSettings] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<'pendapatan' | 'belanja' | 'pembiayaan'>('pendapatan');
+  const [selectedMonth, setSelectedMonth] = useState<string>('Semua');
 
-  // Statistics calculations
+  // List of unique months for the filter
+  const availableMonths = useMemo(() => {
+    const months = Array.from(new Set(data.map(item => item.bulan)));
+    return ['Semua', ...months];
+  }, [data]);
+
+  // Data filtered for calculation of trends (ignores selectedMonth)
+  const categoryData = useMemo(() => {
+    return data.filter(item => item.kategori === activeTab);
+  }, [data, activeTab]);
+
+  // Trend data: Group by month
+  const trendData = useMemo(() => {
+    const grouped = categoryData.reduce((acc, curr) => {
+      if (!acc[curr.bulan]) {
+        acc[curr.bulan] = { bulan: curr.bulan, realisasi: 0, anggaran: 0 };
+      }
+      acc[curr.bulan].realisasi += curr.realisasi;
+      acc[curr.bulan].anggaran += curr.anggaran;
+      return acc;
+    }, {} as Record<string, { bulan: string; realisasi: number; anggaran: number }>);
+
+    return Object.values(grouped);
+  }, [categoryData]);
+
+  // Data filtered for current view (Bar Chart & Table)
+  const tabData = useMemo(() => {
+    let filtered = categoryData;
+    if (selectedMonth !== 'Semua') {
+      filtered = filtered.filter(item => item.bulan === selectedMonth);
+    }
+    return filtered;
+  }, [categoryData, selectedMonth]);
+
+  // Statistics calculations based on tabData
   const stats = useMemo(() => {
-    const totalAnggaran = data.reduce((acc, curr) => acc + curr.anggaran, 0);
-    const totalRealisasi = data.reduce((acc, curr) => acc + curr.realisasi, 0);
+    const currentData = selectedMonth === 'Semua' ? tabData : tabData; 
+    // If "Semua" is selected, we show sums of all unique accounts in that category
+    // But since accounts might repeat across months, we need to be careful.
+    // For simplicity, let's just sum whatever is in tabData.
+    const totalAnggaran = currentData.reduce((acc, curr) => acc + curr.anggaran, 0);
+    const totalRealisasi = currentData.reduce((acc, curr) => acc + curr.realisasi, 0);
     const overallPersentase = totalAnggaran > 0 ? (totalRealisasi / totalAnggaran) * 100 : 0;
 
     return { totalAnggaran, totalRealisasi, overallPersentase };
-  }, [data]);
+  }, [tabData, selectedMonth]);
+
+  const compositionData = useMemo(() => {
+    let filtered = data;
+    if (selectedMonth !== 'Semua') {
+      filtered = filtered.filter(item => item.bulan === selectedMonth);
+    }
+
+    const totals = filtered.reduce((acc, curr) => {
+      acc[curr.kategori] = (acc[curr.kategori] || 0) + curr.realisasi;
+      return acc;
+    }, {} as Record<string, number>);
+
+    return [
+      { name: 'Pendapatan', value: totals['pendapatan'] || 0, color: '#6366f1' },
+      { name: 'Belanja', value: totals['belanja'] || 0, color: '#10b981' },
+      { name: 'Pembiayaan', value: totals['pembiayaan'] || 0, color: '#f59e0b' }
+    ].filter(item => item.value > 0);
+  }, [data, selectedMonth]);
 
   const filteredData = useMemo(() => {
-    return data.filter(item => 
+    return tabData.filter(item => 
       item.akun.toLowerCase().includes(searchQuery.toLowerCase())
     );
-  }, [data, searchQuery]);
+  }, [tabData, searchQuery]);
 
   const fetchData = async (url: string) => {
     if (!url) return;
@@ -50,16 +109,27 @@ export default function App() {
     setError(null);
     try {
       const response = await fetch(url);
-      if (!response.ok) throw new Error('Gagal mengambil data dari Google Sheets');
+      if (!response.ok) throw new Error('Gagal mengambil data dari Google Sheets (Cek URL/Izin)');
+      
       const json = await response.json();
       
+      if (json && typeof json === 'object' && 'error' in json) {
+        throw new Error(`GAS Error: ${json.error}`);
+      }
+
       if (Array.isArray(json)) {
+        if (json.length === 0) throw new Error('Sheet kosong atau tidak memiliki data baris.');
         setData(json);
+        setShowSettings(false); // Auto close on success
       } else {
-        throw new Error('Format data tidak valid');
+        throw new Error('Format data tidak valid (Ekspektasi: JSON Array)');
       }
     } catch (err: any) {
-      setError(err.message);
+      if (err instanceof SyntaxError) {
+        setError('Gagal memproses JSON. Pastikan Web App diset "Access: Anyone" dan mengembalikan JSON.');
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -89,7 +159,7 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-xl font-bold tracking-tight">APBD Dashboard</h1>
-            <p className="text-xs text-slate-400 uppercase tracking-widest">Provinsi / Kota Monitor • Live GAS Sync</p>
+            <p className="text-xs text-slate-400 uppercase tracking-widest">Kab. Sumbawa Barat • Live GAS Sync</p>
           </div>
         </div>
 
@@ -160,19 +230,34 @@ export default function App() {
                   </div>
                   <pre className="text-[11px] bg-black/40 text-slate-300 p-6 rounded-2xl overflow-x-auto whitespace-pre font-mono border border-white/5">
 {`function doGet() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Data APBD");
-  const data = sheet.getDataRange().getValues();
-  const rows = data.slice(1);
-  
-  const result = rows.map(row => ({
-    akun: row[0],
-    anggaran: row[1],
-    realisasi: row[2],
-    persentase: row[3]
-  }));
-  
-  return ContentService.createTextOutput(JSON.stringify(result))
-    .setMimeType(ContentService.MimeType.JSON);
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName("Data APBD"); 
+    
+    if (!sheet) {
+      return ContentService.createTextOutput(JSON.stringify({ error: "Sheet 'Data APBD' tidak ditemukan" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    const data = sheet.getDataRange().getValues();
+    const rows = data.slice(1); 
+    
+    const result = rows.map(row => ({
+      akun: row[0] ? row[0].toString() : "",
+      anggaran: row[1] ? Number(row[1]) : 0,
+      realisasi: row[2] ? Number(row[2]) : 0,
+      persentase: row[3] ? Number(row[3]) : 0,
+      kategori: row[4] ? row[4].toString().toLowerCase().trim() : "pendapatan",
+      bulan: row[5] ? row[5].toString().trim() : "Januari"
+    }));
+    
+    return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+      
+  } catch (e) {
+    return ContentService.createTextOutput(JSON.stringify({ error: e.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
 }`}
                   </pre>
                 </div>
@@ -181,16 +266,116 @@ export default function App() {
           )}
         </AnimatePresence>
 
+        {/* Composition Summary Section */}
+        <div className="mb-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="lg:col-span-3 bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-6 shadow-xl flex flex-col md:flex-row items-center gap-8"
+          >
+            <div className="flex-shrink-0 w-full md:w-64">
+              <h3 className="font-bold text-slate-200 mb-4 flex items-center justify-between">
+                <span>Komposisi APBD</span>
+                <span className="text-[10px] bg-white/10 px-2 py-1 rounded text-slate-400 capitalize">{selectedMonth}</span>
+              </h3>
+              <div className="h-[200px] w-full relative">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={compositionData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                      {compositionData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          return (
+                            <div className="bg-[#1e293b]/90 backdrop-blur-xl p-3 shadow-2xl border border-white/10 rounded-xl">
+                              <p className="text-xs font-bold text-white mb-1">{payload[0].name}</p>
+                              <p className="text-[10px] font-mono text-slate-300">{formatBillions(payload[0].value as number)}</p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
+                  <span className="block text-[10px] text-slate-500 font-bold uppercase">Total</span>
+                  <span className="block text-xs font-bold text-white">
+                    {formatBillions(compositionData.reduce((acc, curr) => acc + curr.value, 0))}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-6 w-full">
+              {compositionData.map((item, i) => (
+                <div key={i} className="bg-white/5 p-4 rounded-xl border border-white/5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{item.name}</span>
+                  </div>
+                  <div className="text-lg font-black text-white">{formatBillions(item.value)}</div>
+                  <div className="text-[10px] text-slate-500 font-medium">Realisasi Akumulasi</div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        </div>
+
+        {/* Tab & Month Navigation */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
+          <div className="flex flex-wrap gap-2 bg-white/5 backdrop-blur-md p-1.5 rounded-[1.25rem] border border-white/10 w-fit">
+            {(['pendapatan', 'belanja', 'pembiayaan'] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={cn(
+                  "px-6 py-2.5 rounded-xl text-sm font-bold capitalize transition-all duration-300",
+                  activeTab === tab 
+                    ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/20" 
+                    : "text-slate-400 hover:text-slate-100 hover:bg-white/5"
+                )}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-3 bg-white/5 backdrop-blur-md p-1.5 rounded-[1.25rem] border border-white/10">
+            <Calendar className="w-4 h-4 text-slate-400 ml-3" />
+            <select 
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="bg-transparent text-sm font-bold text-slate-200 outline-none pr-4 py-2 cursor-pointer"
+            >
+              {availableMonths.map(m => (
+                <option key={m} value={m} className="bg-[#1e293b]">{m}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <StatCard 
-            title="Total Anggaran" 
+            title={`Total ${activeTab}`} 
             value={formatBillions(stats.totalAnggaran)}
             icon={<Wallet className="w-6 h-6" />}
             color="indigo"
           />
           <StatCard 
-            title="Total Realisasi" 
+            title={`Realisasi ${activeTab}`}
             value={formatBillions(stats.totalRealisasi)}
             icon={<CreditCard className="w-6 h-6" />}
             color="emerald"
@@ -206,10 +391,58 @@ export default function App() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Trend Analysis */}
+          <div className="lg:col-span-3 bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-8 shadow-xl">
+            <div className="flex items-center justify-between mb-8">
+              <h3 className="font-bold text-xl text-white">Trend Realisasi {activeTab}</h3>
+              <p className="text-xs text-slate-400 font-medium">Monitoring Akumulasi Bulanan</p>
+            </div>
+            <div className="h-[250px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={trendData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                  <XAxis 
+                    dataKey="bulan" 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 500 }}
+                  />
+                  <YAxis 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 500 }}
+                    tickFormatter={(val) => formatBillions(val)}
+                  />
+                  <Tooltip 
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        return (
+                          <div className="bg-[#1e293b]/90 backdrop-blur-xl p-4 shadow-2xl border border-white/10 rounded-xl">
+                            <p className="text-sm font-bold mb-2 text-white">{payload[0].payload.bulan}</p>
+                            <p className="text-xs text-emerald-400 font-mono font-bold">Realisasi: {formatCurrency(payload[0].value as number)}</p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="realisasi" 
+                    stroke="#10b981" 
+                    strokeWidth={3} 
+                    dot={{ fill: '#10b981', strokeWidth: 2, r: 4 }}
+                    activeDot={{ r: 6, strokeWidth: 0 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
           {/* Main Chart */}
           <div className="lg:col-span-2 bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-8 shadow-xl">
             <div className="flex items-center justify-between mb-8">
-              <h3 className="font-bold text-xl text-white">Analisis Anggaran vs Realisasi</h3>
+              <h3 className="font-bold text-xl text-white capitalize">Analisis {activeTab}</h3>
               <div className="flex gap-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 bg-indigo-500 rounded-sm" /> Anggaran
@@ -220,51 +453,61 @@ export default function App() {
               </div>
             </div>
             <div className="h-[400px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={data.slice(0, 8)}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
-                  <XAxis 
-                    dataKey="akun" 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 500 }}
-                    interval={0}
-                    height={60}
-                    tickFormatter={(val) => val.length > 12 ? val.substring(0, 12) + '...' : val}
-                  />
-                  <YAxis 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 500 }}
-                    tickFormatter={(val) => formatBillions(val)}
-                  />
-                  <Tooltip 
-                    cursor={{ fill: 'rgba(255,255,255,0.05)' }}
-                    content={({ active, payload }) => {
-                      if (active && payload && payload.length) {
-                        return (
-                          <div className="bg-[#1e293b]/90 backdrop-blur-xl p-5 shadow-2xl border border-white/10 rounded-2xl">
-                            <p className="text-sm font-bold mb-3 text-white">{payload[0].payload.akun}</p>
-                            <div className="space-y-2">
-                              <div className="flex flex-col">
-                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Anggaran</span>
-                                <span className="text-sm text-indigo-400 font-mono font-bold">{formatCurrency(payload[0].value as number)}</span>
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={activeTab}
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="w-full h-full"
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={tabData.slice(0, 8)}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                      <XAxis 
+                        dataKey="akun" 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 500 }}
+                        interval={0}
+                        height={60}
+                        tickFormatter={(val) => val.length > 12 ? val.substring(0, 12) + '...' : val}
+                      />
+                      <YAxis 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 500 }}
+                        tickFormatter={(val) => formatBillions(val)}
+                      />
+                      <Tooltip 
+                        cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                        content={({ active, payload }) => {
+                          if (active && payload && payload.length) {
+                            return (
+                              <div className="bg-[#1e293b]/90 backdrop-blur-xl p-5 shadow-2xl border border-white/10 rounded-2xl">
+                                <p className="text-sm font-bold mb-3 text-white">{payload[0].payload.akun}</p>
+                                <div className="space-y-2">
+                                  <div className="flex flex-col">
+                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Anggaran</span>
+                                    <span className="text-sm text-indigo-400 font-mono font-bold">{formatCurrency(payload[0].value as number)}</span>
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Realisasi</span>
+                                    <span className="text-sm text-emerald-400 font-mono font-bold">{formatCurrency(payload[1].value as number)}</span>
+                                  </div>
+                                </div>
                               </div>
-                              <div className="flex flex-col">
-                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Realisasi</span>
-                                <span className="text-sm text-emerald-400 font-mono font-bold">{formatCurrency(payload[1].value as number)}</span>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      }
-                      return null;
-                    }}
-                  />
-                  <Bar dataKey="anggaran" fill="#6366f1" radius={[6, 6, 0, 0]} barSize={35} />
-                  <Bar dataKey="realisasi" fill="#10b981" radius={[6, 6, 0, 0]} barSize={35} />
-                </BarChart>
-              </ResponsiveContainer>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <Bar dataKey="anggaran" fill="#6366f1" radius={[6, 6, 0, 0]} barSize={35} />
+                      <Bar dataKey="realisasi" fill="#10b981" radius={[6, 6, 0, 0]} barSize={35} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </motion.div>
+              </AnimatePresence>
             </div>
           </div>
 
@@ -272,11 +515,11 @@ export default function App() {
           <div className="flex flex-col gap-6">
             <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-6 shadow-xl flex flex-col h-full">
               <h3 className="font-bold text-slate-200 mb-6 flex items-center justify-between">
-                <span>Top Regional Performance</span>
-                <span className="text-[10px] bg-white/10 px-2 py-1 rounded text-slate-400">MAY 2024</span>
+                <span className="capitalize">Top {activeTab}</span>
+                <span className="text-[10px] bg-white/10 px-2 py-1 rounded text-slate-400 uppercase tracking-widest">{selectedMonth === 'Semua' ? 'AKUMULASI' : selectedMonth}</span>
               </h3>
               <div className="flex-1 flex flex-col gap-6">
-                {data.slice(0, 4).map((item, i) => (
+                {tabData.slice(0, 4).map((item, i) => (
                   <div key={i} className="space-y-2">
                     <div className="flex justify-between text-xs items-end">
                       <span className="text-slate-300 font-medium truncate pr-4">{item.akun}</span>
@@ -313,8 +556,8 @@ export default function App() {
         <div className="mt-8 bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl shadow-xl overflow-hidden flex flex-col">
           <div className="p-8 border-b border-white/10 flex flex-col md:flex-row items-center justify-between gap-6">
             <div>
-              <h2 className="text-xl font-bold text-white tracking-tight">Google Sheet Data View</h2>
-              <p className="text-xs text-slate-400 mt-1 uppercase tracking-widest font-semibold">Daftar Lengkap Akun Pendapatan & Belanja</p>
+              <h2 className="text-xl font-bold text-white tracking-tight capitalize">Data View: {activeTab}</h2>
+              <p className="text-xs text-slate-400 mt-1 uppercase tracking-widest font-semibold">Rincian Lengkap {activeTab} Kab. Sumbawa Barat</p>
             </div>
             <div className="relative w-full md:w-96">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
@@ -404,7 +647,7 @@ export default function App() {
 function StatCard({ title, value, icon, color, percentage, progressBar }: { 
   title: string; 
   value: string; 
-  icon: React.ReactNode; 
+  icon: ReactNode; 
   color: 'indigo' | 'emerald' | 'rose';
   percentage?: number;
   progressBar?: number;

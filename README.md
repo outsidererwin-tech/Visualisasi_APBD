@@ -1,52 +1,81 @@
-# Dashboard APBD - Google Sheets Integration
+# Dashboard APBD Interaktif - Google Sheets Integration
 
-Aplikasi ini adalah dashboard interaktif untuk memonitor data APBD (Anggaran Pendapatan dan Belanja Daerah).
+Aplikasi ini adalah dashboard interaktif premium untuk memonitor data APBD (Anggaran Pendapatan dan Belanja Daerah) dengan fitur analisis trend bulanan dan komposisi realisasi.
 
-## Cara Menghubungkan ke Google Sheets
+## Struktur Google Sheets
 
-1. **Siapkan Google Sheet**:
-   - Buat spreadsheet baru.
-   - Beri nama Sheet pertama sebagai `Data APBD`.
-   - Buat kolom berikut di baris pertama (Header):
-     - `Akun` (Kolom A)
-     - `Anggaran` (Kolom B)
-     - `Realisasi` (Kolom C)
-     - `Persentase` (Kolom D)
-   - Isi data Anda di baris-baris berikutnya.
+Untuk menghubungkan data Anda, pastikan Google Sheet memiliki struktur sebagai berikut pada sheet pertama (beri nama sheet: **Data APBD**):
 
-2. **Setup Google Apps Script**:
-   - Di Google Sheets, buka menu **Extensions** > **Apps Script**.
-   - Hapus semua kode yang ada dan tempel kode berikut:
+| Kolom | Nama Header | Deskripsi | Contoh Value |
+|-------|-------------|-----------|--------------|
+| **A** | `Akun` | Nama pos anggaran | PAD, Belanja Pegawai, dll |
+| **B** | `Anggaran` | Total anggaran (Angka) | 150000000 |
+| **C** | `Realisasi` | Total realisasi (Angka) | 75000000 |
+| **D** | `Persentase`| % Capaian (Angka/Rumus) | 50.00 |
+| **E** | `Kategori` | Jenis pos (Kecil semua) | `pendapatan`, `belanja`, atau `pembiayaan` |
+| **F** | `Bulan` | Nama Bulan | Januari, Februari, Maret, dst |
 
-   ```javascript
-   function doGet() {
-     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Data APBD");
-     const data = sheet.getDataRange().getValues();
-     const rows = data.slice(1); // Melewati baris header
-     
-     const result = rows.map(row => ({
-       akun: row[0].toString(),
-       anggaran: Number(row[1]),
-       realisasi: Number(row[2]),
-       persentase: Number(row[3])
-     }));
-     
-     return ContentService.createTextOutput(JSON.stringify(result))
-       .setMimeType(ContentService.MimeType.JSON);
-   }
-   ```
+---
 
-3. **Deploy sebagai Web App**:
-   - Klik tombol **Deploy** > **New deployment**.
-   - Pilih type **Web app**.
-   - Di bagian **Execute as**, pilih `Me`.
-   - Di bagian **Who has access**, pilih `Anyone`.
-   - Klik **Deploy** dan salin **Web App URL** yang muncul.
+## Koneksi Google Apps Script
 
-4. **Koneksikan ke Dashboard**:
-   - Buka dashboard ini.
-   - Klik ikon **Settings** (roda gigi) di pojok kanan atas.
-   - Tempel URL Apps Script Anda ke kotak input yang tersedia.
-   - Klik **Update Data**.
+1. Di Google Sheets, buka menu **Extensions** > **Apps Script**.
+2. Hapus semua kode default dan tempel kode lengkap di bawah ini:
 
-Dashboard akan sekarang menampilkan data langsung dari Google Sheet Anda!
+```javascript
+/**
+ * Script untuk mengambil data APBD dari Google Sheets dan
+ * mengirimkannya ke Dashboard dalam format JSON.
+ */
+function doGet() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName("Data APBD"); // Sesuaikan nama sheet jika berbeda
+    
+    if (!sheet) {
+      return ContentService.createTextOutput(JSON.stringify({ error: "Sheet 'Data APBD' tidak ditemukan" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const rows = data.slice(1); // Mengambil data tanpa header
+    
+    // Mapping data ke format JSON yang dibutuhkan aplikasi
+    const result = rows.map(row => {
+      return {
+        akun: row[0] ? row[0].toString() : "",
+        anggaran: row[1] ? Number(row[1]) : 0,
+        realisasi: row[2] ? Number(row[2]) : 0,
+        persentase: row[3] ? Number(row[3]) : 0,
+        kategori: row[4] ? row[4].toString().toLowerCase().trim() : "pendapatan",
+        bulan: row[5] ? row[5].toString().trim() : "Januari"
+      };
+    });
+    
+    return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+      
+  } catch (e) {
+    return ContentService.createTextOutput(JSON.stringify({ error: e.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+```
+
+## Cara Deployment (PENTING!)
+
+1. Klik tombol biru **Deploy** di kanan atas > **New deployment**.
+2. Pilih **Select type** > **Web app**.
+3. Isi **Description** (misal: "API APBD v1").
+4. **Execute as**: Pilih **Me** (Email Anda).
+5. **Who has access**: Pilih **Anyone** (Agar dashboard bisa membaca data tanpa login Google).
+6. Klik **Deploy**.
+7. Salin **Web App URL** yang muncul (Berakhir dengan `/exec`).
+
+## Update Data di Dashboard
+
+1. Buka aplikasi Dashboard ini.
+2. Klik tombol **Settings** (ikon roda gigi) di pojok kanan atas.
+3. Masukkan URL yang sudah disalin tadi.
+4. Klik **Update Data**.

@@ -3,6 +3,8 @@ export interface APBDData {
   anggaran: number;
   realisasi: number;
   persentase: number;
+  kategori: 'pendapatan' | 'belanja' | 'pembiayaan';
+  bulan: string;
 }
 
 export interface DashboardStats {
