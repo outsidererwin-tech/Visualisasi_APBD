@@ -1,0 +1,6 @@
+{
+  "name": "APBD Dashboard",
+  "description": "Dashboard interaktif untuk memonitor Anggaran Pendapatan dan Belanja Daerah (APBD) yang terintegrasi dengan Google Sheets.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
