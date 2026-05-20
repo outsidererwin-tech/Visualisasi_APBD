@@ -11,7 +11,8 @@ import {
   Settings,
   Database,
   CloudLightning,
-  CheckCircle2
+  CheckCircle2,
+  UserCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
@@ -261,11 +262,20 @@ export function Sidebar({
           "flex items-center gap-3 overflow-hidden transition-all",
           isExpanded ? "px-4" : "justify-center"
         )}>
-          <div className="w-8 h-8 rounded-full bg-slate-800 border border-white/10 flex-shrink-0" />
+          <div className="w-8 h-8 rounded-full bg-indigo-950/40 border border-indigo-500/20 flex items-center justify-center flex-shrink-0 shadow-inner">
+            <UserCheck className="w-4 h-4 text-indigo-400" />
+          </div>
           {isExpanded && (
             <div className="truncate">
-              <p className="text-xs font-bold text-white truncate">Admin KSB</p>
-              <p className="text-[10px] text-slate-500 truncate lowercase">bpkad.ppid.sumbawabaratkab.go.id</p>
+              <p className="text-xs font-bold text-white truncate">Admin BPKAD KSB</p>
+              <a 
+                href="https://bpkad.ppid.sumbawabaratkab.go.id" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="text-[10px] text-slate-500 hover:text-indigo-400 hover:underline truncate lowercase transition-colors block"
+              >
+                bpkad.ppid.sumbawabaratkab.go.id
+              </a>
             </div>
           )}
         </div>
