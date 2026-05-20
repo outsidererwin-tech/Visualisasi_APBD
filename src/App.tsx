@@ -54,9 +54,7 @@ export default function App() {
       
       <div className="flex-1 flex flex-col min-w-0">
         <div className="sticky top-0 z-30 w-full bg-[#020617]/85 backdrop-blur-xl pt-6 pb-4 px-4 sm:px-6 lg:px-8 border-b border-white/5 mb-8">
-          <DashboardHeader 
-            hasUrl={!!appsScriptUrl} 
-          />
+          <DashboardHeader />
         </div>
 
         <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pb-12">

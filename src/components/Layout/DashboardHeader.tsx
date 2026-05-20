@@ -3,11 +3,7 @@ import { motion } from 'motion/react';
 import { CloudSun, MapPin, Clock, ShieldCheck, Waves } from 'lucide-react';
 import { APP_CONFIG } from '../../lib/constants';
 
-interface HeaderProps {
-  hasUrl: boolean;
-}
-
-export function DashboardHeader({ hasUrl }: HeaderProps) {
+export function DashboardHeader() {
   const [time, setTime] = useState<string>('');
   const [currentImageIndex, setCurrentImageIndex] = useState<number>(0);
 
@@ -22,7 +18,10 @@ export function DashboardHeader({ hasUrl }: HeaderProps) {
       const minutes = String(witaDate.getMinutes()).padStart(2, '0');
       const seconds = String(witaDate.getSeconds()).padStart(2, '0');
       
-      setTime(`${hours}:${minutes}:${seconds} WITA`);
+      const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+      const dayName = days[witaDate.getDay()];
+      
+      setTime(`${dayName}, ${hours}:${minutes}:${seconds} WITA`);
     };
 
     updateTime();
@@ -45,6 +44,11 @@ export function DashboardHeader({ hasUrl }: HeaderProps) {
       transition={{ duration: 0.6, ease: 'easeOut' }}
       className="relative z-30 w-full max-w-7xl mx-auto rounded-[2rem] overflow-hidden shadow-2xl border border-white/10 group bg-slate-950"
     >
+      {/* Real-time WITA Clock (Sistem Publik WITA Clock - Posisi Sudut Kanan Atas) */}
+      <div className="absolute top-4 right-4 sm:top-5 sm:right-6 z-25 flex items-center gap-2 px-3 py-1.5 bg-slate-950/80 backdrop-blur-xl border border-white/10 rounded-xl shadow-lg text-slate-200">
+        <Clock className="w-3.5 h-3.5 text-amber-400" />
+        <span className="text-[10px] sm:text-xs font-mono font-bold tracking-wider">{time || '--:--:-- WITA'}</span>
+      </div>
       {/* Dynamic Background Banner Slideshow with Cross-fade Transition */}
       <div className="absolute inset-0 z-0 overflow-hidden bg-slate-950">
         {APP_CONFIG.HERO_IMAGES.map((img, idx) => (
@@ -109,12 +113,6 @@ export function DashboardHeader({ hasUrl }: HeaderProps) {
         {/* Right Section: Real-time Info Badges & Control Status */}
         <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto mt-4 md:mt-0 justify-center md:justify-end">
           
-          {/* Real-time WITA Clock */}
-          <div className="flex items-center gap-2.5 px-4 py-2 bg-slate-900/65 backdrop-blur-xl border border-white/5 rounded-xl text-slate-200">
-            <Clock className="w-4 h-4 text-amber-400" />
-            <span className="text-xs font-mono font-bold tracking-wider">{time || '--:--:-- WITA'}</span>
-          </div>
-
           {/* Sumbawa Local Weather / Info Card */}
           <div className="flex items-center gap-2.5 px-4 py-2 bg-slate-900/65 backdrop-blur-xl border border-white/5 rounded-xl text-slate-200 min-w-[150px]">
             <CloudSun className="w-4 h-4 text-emerald-400 animate-bounce shrink-0" />
@@ -131,23 +129,6 @@ export function DashboardHeader({ hasUrl }: HeaderProps) {
               </motion.span>
             </div>
           </div>
-
-          {/* Connection Status Badge */}
-          {hasUrl ? (
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl"
-            >
-              <div className="w-2.5 h-2.5 bg-emerald-400 rounded-full animate-pulse-ring" />
-              <span className="text-xs font-bold text-emerald-400">Koneksi Aktif</span>
-            </motion.div>
-          ) : (
-            <div className="flex items-center gap-2 px-4 py-2 bg-rose-500/10 border border-rose-500/20 rounded-xl">
-              <div className="w-2.5 h-2.5 bg-rose-400 rounded-full" />
-              <span className="text-xs font-bold text-rose-400">Koneksi Lokal</span>
-            </div>
-          )}
         </div>
       </div>
 
