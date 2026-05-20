@@ -1,4 +1,4 @@
-import logoKsb from '../assets/images/logo_ksb_png_1779190186270.png';
+import logoKsb from '../assets/images/logo-ksb.png';
 import heroKenawa from '../assets/images/sumbawa_barat_kenawa_hero_1779259194797.png';
 import malukBeach from '../assets/images/sumbawa_maluk_beach_1779260638751.png';
 import sunsetHills from '../assets/images/sumbawa_sunset_hills_1779260660805.png';
