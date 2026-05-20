@@ -15,6 +15,7 @@ import { Sidebar } from './components/Layout/Sidebar';
 import { StatCard } from './components/Stats/StatCard';
 import { CompositionSummary } from './components/Charts/CompositionSummary';
 import { DataScraper } from './components/Tools/DataScraper';
+import { DataSIKDView } from './components/Views/DataSIKDView';
 import { TABS } from './lib/constants';
 
 export default function App() {
@@ -32,7 +33,13 @@ export default function App() {
     currentViewData,
     stats,
     compositionData,
-    refreshData
+    refreshData,
+    refreshSikdData,
+    importNewData,
+    importNewSikdData,
+    resetToMockData,
+    resetSikdToMockData,
+    sikdData
   } = useAPBDData();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -59,7 +66,22 @@ export default function App() {
 
         <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pb-12">
           {activeTab === 'tambah-data' ? (
-            <DataScraper appsScriptUrl={appsScriptUrl} />
+            <DataScraper 
+              appsScriptUrl={appsScriptUrl} 
+              importNewData={importNewData} 
+              importNewSikdData={importNewSikdData}
+              resetToMockData={resetToMockData}
+              resetSikdToMockData={resetSikdToMockData}
+              onNavigateToSikd={() => setActiveTab('data-sikd')}
+              refreshSikdData={refreshSikdData}
+              refreshData={refreshData}
+              loading={loading}
+              error={error}
+            />
+          ) : activeTab === 'data-sikd' ? (
+            <DataSIKDView 
+              sikdData={sikdData}
+            />
           ) : (
             <>
               <CompositionSummary data={compositionData} selectedMonth={selectedMonth} />

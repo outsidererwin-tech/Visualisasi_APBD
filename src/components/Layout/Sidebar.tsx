@@ -19,8 +19,8 @@ import { cn } from '../../lib/utils';
 import { TABS } from '../../lib/constants';
 
 interface SidebarProps {
-  activeTab: 'pendapatan' | 'belanja' | 'pembiayaan' | 'tambah-data';
-  onTabChange: (tab: 'pendapatan' | 'belanja' | 'pembiayaan' | 'tambah-data') => void;
+  activeTab: 'pendapatan' | 'belanja' | 'pembiayaan' | 'tambah-data' | 'data-sikd';
+  onTabChange: (tab: 'pendapatan' | 'belanja' | 'pembiayaan' | 'tambah-data' | 'data-sikd') => void;
   appsScriptUrl: string;
   setAppsScriptUrl: (url: string) => void;
   loading: boolean;
@@ -67,6 +67,12 @@ export function Sidebar({
       id: 'pembiayaan', 
       label: 'Pembiayaan', 
       icon: <TrendingDown className="w-5 h-5" />, 
+      type: 'tab' 
+    },
+    { 
+      id: 'data-sikd', 
+      label: 'Data SIKD', 
+      icon: <Database className="w-5 h-5" />, 
       type: 'tab' 
     },
   ];

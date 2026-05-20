@@ -46,7 +46,7 @@ function doGet(e) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   
   try {
-    if (action === 'scrape') return scrapeDataToRaw(e.parameter.periode);
+    if (action === 'scrape') return scrapeDataToRaw(e.parameter.periode, e.parameter.tahun);
     if (action === 'sync') return syncRawToMain();
     
     // DEFAULT: Fetch Dashboard Data
@@ -102,8 +102,8 @@ function syncRawToMain() {
   return createJsonResponse({ status: 'success', message: 'Berhasil memindahkan ' + syncedCount + ' baris ke Data APBD.' });
 }
 
-function scrapeDataToRaw(periode) {
-  const years = '2026';
+function scrapeDataToRaw(periode, tahun) {
+  const years = tahun || '2024';
   const prov = '23'; 
   const pemda = '09'; 
   const url = 'https://djpk.kemenkeu.go.id/portal/data/apbd?periode=' + periode + '&tahun=' + years + '&provinsi=' + prov + '&pemda=' + pemda;
