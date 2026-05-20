@@ -1,4 +1,4 @@
-import logoKsb from '../assets/images/logo-ksb.png';
+import { logoB64 } from '../assets/logo-b64';
 import heroKenawa from '../assets/images/sumbawa_barat_kenawa_hero_1779259194797.png';
 import malukBeach from '../assets/images/sumbawa_maluk_beach_1779260638751.png';
 import sunsetHills from '../assets/images/sumbawa_sunset_hills_1779260660805.png';
@@ -29,7 +29,7 @@ export const TABS = [
 
 export const APP_CONFIG = {
   DAERAH_NAME: 'Kab. Sumbawa Barat',
-  LOGO_PATH: logoKsb,
+  LOGO_PATH: logoB64,
   HERO_PATH: heroKenawa,
   HERO_IMAGES: [
     {
