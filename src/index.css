@@ -6,12 +6,63 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
-body {
-  background-color: #0f172a;
-  background-image: 
-    radial-gradient(at 0% 0%, rgba(79, 70, 229, 0.4) 0px, transparent 50%), 
-    radial-gradient(at 100% 0%, rgba(236, 72, 153, 0.4) 0px, transparent 50%), 
-    radial-gradient(at 50% 100%, rgba(20, 184, 166, 0.3) 0px, transparent 50%);
-  background-attachment: fixed;
-  color: #f1f5f9;
+@keyframes gradient-drift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
 }
+
+@keyframes slow-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(0.95);
+    opacity: 0.5;
+  }
+}
+
+.animate-gradient-slow {
+  background-size: 200% 200%;
+  animation: gradient-drift 20s ease infinite;
+}
+
+.animate-slow-spin {
+  animation: slow-spin 25s linear infinite;
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+body {
+  background-color: #030712;
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.15) 0px, transparent 40%), 
+    radial-gradient(at 100% 0%, rgba(245, 158, 11, 0.12) 0px, transparent 40%), 
+    radial-gradient(at 50% 50%, rgba(6, 78, 59, 0.15) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(99, 102, 241, 0.15) 0px, transparent 55%);
+  background-attachment: fixed;
+  color: #f8fafc;
+}
+

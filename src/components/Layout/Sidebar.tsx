@@ -79,13 +79,13 @@ export function Sidebar({
       {/* Toggle Button */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="absolute -right-3 top-24 bg-indigo-600 text-white p-1 rounded-full shadow-lg hover:bg-indigo-700 transition-colors z-50 border border-white/20"
+        className="absolute -right-3 top-16 bg-indigo-600 text-white p-1 rounded-full shadow-lg hover:bg-indigo-700 transition-colors z-50 border border-white/20"
       >
         {isExpanded ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
       </button>
 
-      {/* Sidebar Header/Space */}
-      <div className="h-28 flex items-center px-6">
+      {/* Sidebar Header/Space - Frozen Top Bar */}
+      <div className="h-20 flex-shrink-0 flex items-center px-6 border-b border-white/5 bg-slate-950/30">
         <AnimatePresence mode="wait">
           {isExpanded ? (
             <motion.div
@@ -98,7 +98,7 @@ export function Sidebar({
               <div className="bg-indigo-600 w-8 h-8 rounded-lg flex items-center justify-center shadow-indigo-500/20 shadow-lg">
                 <LayoutDashboard className="w-5 h-5 text-white" />
               </div>
-              <span className="font-black text-white tracking-tight uppercase text-sm">Dashboard Nav</span>
+              <span className="font-black text-white tracking-tight uppercase text-sm">Menu Dashboard</span>
             </motion.div>
           ) : (
             <motion.div
@@ -115,7 +115,7 @@ export function Sidebar({
       </div>
 
       {/* Navigation Groups */}
-      <nav className="flex-1 px-4 space-y-8 mt-4 overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+      <nav className="flex-1 px-4 py-4 space-y-8 overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         {/* Main Group */}
         <div>
           {isExpanded && (
@@ -265,7 +265,7 @@ export function Sidebar({
           {isExpanded && (
             <div className="truncate">
               <p className="text-xs font-bold text-white truncate">Admin KSB</p>
-              <p className="text-[10px] text-slate-500 truncate lowercase">sumbawabarat.go.id</p>
+              <p className="text-[10px] text-slate-500 truncate lowercase">bpkad.ppid.sumbawabaratkab.go.id</p>
             </div>
           )}
         </div>
