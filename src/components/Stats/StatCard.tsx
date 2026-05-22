@@ -1,7 +1,7 @@
 import { ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { cn } from '../../lib/utils';
-import { formatBillions } from '../../lib/formatters';
+import { formatBillions, formatPercentage } from '../../lib/formatters';
 
 export function StatCard({ title, value, icon, color, percentage, progressBar }: { 
   title: string; 
@@ -45,7 +45,7 @@ export function StatCard({ title, value, icon, color, percentage, progressBar }:
         <div className="mt-6">
           <div className="flex justify-between text-[10px] font-bold text-slate-500 mb-2 uppercase tracking-widest">
             <span>Utilization Rate</span>
-            <span>{progressBar.toFixed(1)}%</span>
+            <span>{formatPercentage(progressBar)}</span>
           </div>
           <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
             <motion.div 

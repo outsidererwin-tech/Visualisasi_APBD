@@ -1,8 +1,8 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { 
-  CloudDownload, Loader2, CheckCircle2, AlertCircle, ExternalLink, Code, 
+  CloudDownload, Loader2, CheckCircle2, AlertCircle, ExternalLink, 
   Upload, Trash2, FileSpreadsheet, RefreshCw, Check, ArrowRight, Table,
-  TrendingUp, TrendingDown, Scale, PieChart as PieIcon, Info, Database
+  TrendingUp, TrendingDown, Scale, PieChart as PieIcon, Info, Database, Zap
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
@@ -36,7 +36,7 @@ export function DataScraper({
   loading,
   error
 }: DataScraperProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'upload' | 'api-scraper'>('upload');
+  const [activeSubTab, setActiveSubTab] = useState<'upload' | 'api-scraper'>('api-scraper');
 
   // ---------- Sync States ----------
   const [syncStatus, setSyncStatus] = useState<{ type: 'idle' | 'success' | 'error', message: string }>({ type: 'idle', message: '' });
@@ -62,9 +62,13 @@ export function DataScraper({
         throw new Error('Gagal memuat tab "Data SIKD".');
       }
     } catch (err: any) {
+      let msg = err.message || 'Gagal sinkron. Pastikan tab "Data SIKD" sudah dibuat di Google Sheet Anda.';
+      if (msg.toLowerCase().includes('failed to fetch')) {
+        msg = 'Koneksi gagal (Failed to fetch). Pastikan URL Google Apps Script Anda benar, Web App telah disebarkan (deployed) sebagai "Anyone" (Siapa Saja), dan koneksi internet Anda stabil.';
+      }
       setSyncStatus({ 
         type: 'error', 
-        message: err.message || 'Gagal sinkron. Pastikan tab "Data SIKD" sudah dibuat di Google Sheet Anda.' 
+        message: msg
       });
     }
   };
@@ -90,16 +94,20 @@ export function DataScraper({
         throw new Error('Gagal memuat data APBD dari Google Sheets.');
       }
     } catch (err: any) {
+      let msg = err.message || 'Gagal sinkron. Pastikan koneksi Google Sheets Anda aktif.';
+      if (msg.toLowerCase().includes('failed to fetch')) {
+        msg = 'Koneksi gagal (Failed to fetch). Pastikan URL Google Apps Script Anda benar, Web App telah disebarkan (deployed) sebagai "Anyone" (Siapa Saja), dan koneksi internet Anda stabil.';
+      }
       setSyncStatus({ 
         type: 'error', 
-        message: err.message || 'Gagal sinkron. Pastikan koneksi Google Sheets Anda aktif.' 
+        message: msg
       });
     }
   };
 
   // ---------- Scraper API States ----------
-  const [periode, setPeriode] = useState('5'); // Default Mei
-  const [tahun, setTahun] = useState('2024'); // Default 2024
+  const [periode, setPeriode] = useState('6'); // Default Juni
+  const [tahun, setTahun] = useState('2026'); // Default 2026
   const [scrapeLoading, setScrapeLoading] = useState(false);
   const [scrapeStatus, setScrapeStatus] = useState<{ type: 'success' | 'error' | 'idle', message: string }>({ type: 'idle', message: '' });
   
@@ -228,9 +236,13 @@ export function DataScraper({
       }
 
     } catch (err: any) {
+      let msg = err.message || 'Gagal melakukan Sinkronisasi Otomatis. Pastikan URL Apps Script yang Anda pasang sudah benar dan didukung.';
+      if (msg.toLowerCase().includes('failed to fetch')) {
+        msg = 'Koneksi ke Google Apps Script Gagal (Failed to fetch). Pastikan URL Google Apps Script Anda benar, Web App telah disebarkan (deployed) sebagai "Anyone" (Siapa Saja), serta tidak diblokir oleh ekstensi browser Anda.';
+      }
       setScrapeStatus({
         type: 'error',
-        message: err.message || 'Gagal melakukan Sinkronisasi Otomatis. Pastikan URL Apps Script yang Anda pasang sudah benar dan didukung.'
+        message: msg
       });
     } finally {
       setScrapeLoading(false);
@@ -542,26 +554,26 @@ export function DataScraper({
         <button
           onClick={() => setActiveSubTab('upload')}
           className={cn(
-            "flex-1 flex items-center justify-center gap-2.5 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all",
+            "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-[11px] uppercase tracking-wider transition-all",
             activeSubTab === 'upload' 
               ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" 
               : "text-slate-400 hover:text-slate-200"
           )}
         >
-          <FileSpreadsheet className="w-4 h-4" />
-          Metode 1: Unggah & Analisis Otomatis SIKD
+          <FileSpreadsheet className="w-3.5 h-3.5" />
+          Metode 1: Unggah SIKD
         </button>
         <button
           onClick={() => setActiveSubTab('api-scraper')}
           className={cn(
-            "flex-1 flex items-center justify-center gap-2.5 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all",
+            "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-[11px] uppercase tracking-wider transition-all",
             activeSubTab === 'api-scraper' 
               ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" 
               : "text-slate-400 hover:text-slate-200"
           )}
         >
-          <CloudDownload className="w-4 h-4" />
-          Metode 2: API Scraper DJPK
+          <CloudDownload className="w-3.5 h-3.5" />
+          Metode 2: API DJPK
         </button>
       </div>
 
@@ -823,69 +835,120 @@ export function DataScraper({
                         onChange={(e) => setTahun(e.target.value)}
                         className="w-full px-4 py-3 bg-slate-900 border border-white/10 rounded-xl text-white font-bold focus:ring-2 focus:ring-emerald-500 outline-none transition-all cursor-pointer"
                       >
-                        <option value="2024">2024 (Data Lengkap)</option>
-                        <option value="2025">2025 (Data Terkini)</option>
                         <option value="2026">2026</option>
+                        <option value="2025">2025</option>
+                        <option value="2024">2024</option>
+                        <option value="2023">2023</option>
                       </select>
                     </div>
                   </div>
 
                   <div className="px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-slate-400 text-sm flex items-center justify-between font-bold">
-                    <span>Bulan: {MONTHS[parseInt(periode)] || 'Semua'}</span>
+                    <span>Bulan: {MONTHS[parseInt(periode) - 1] || 'Semua'}</span>
                     <span>Tahun Anggaran: {tahun}</span>
                   </div>
 
-                  <div className="flex flex-col gap-3">
-                    <button
-                      onClick={handleScrape}
-                      disabled={scrapeLoading}
-                      className={cn(
-                        "flex-1 flex items-center justify-center gap-3 py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all",
-                        scrapeLoading 
-                          ? "bg-slate-800 text-slate-500 cursor-not-allowed" 
-                          : "bg-emerald-600 text-white hover:bg-emerald-500 shadow-lg shadow-emerald-500/20 active:scale-[0.98]"
-                      )}
-                    >
-                      {scrapeLoading ? (
-                        <>
-                          <Loader2 className="w-5 h-5 animate-spin" />
-                          Memproses...
-                        </>
-                      ) : (
-                        <>
-                          <CloudDownload className="w-5 h-5" />
-                          Tarik Data Portal DJPK
-                        </>
-                      )}
-                    </button>
+                  <div className="flex flex-col gap-4">
+                    {/* Langkah 1: Tarik Data Portal DJPK */}
+                    <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-black">
+                          1
+                        </span>
+                        <h4 className="text-white font-bold text-xs uppercase tracking-wider">Langkah 1: Ambil Data</h4>
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        Mengunduh realisasi APBD langsung dari Portal DJPK Kemenkeu dan menyimpannya ke sheet <strong>Raw_Data</strong>.
+                      </p>
+                      <button
+                        onClick={handleScrape}
+                        disabled={scrapeLoading || !appsScriptUrl}
+                        className={cn(
+                          "w-full flex items-center justify-center gap-3 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all",
+                          scrapeLoading || !appsScriptUrl
+                            ? "bg-slate-800/80 text-slate-500 cursor-not-allowed border border-white/5" 
+                            : "bg-emerald-600 text-white hover:bg-emerald-500 shadow-lg shadow-emerald-500/20 active:scale-[0.98]"
+                        )}
+                      >
+                        {scrapeLoading ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Mengambil...
+                          </>
+                        ) : (
+                          <>
+                            <CloudDownload className="w-4 h-4" />
+                            Tarik Data Portal DJPK
+                          </>
+                        )}
+                      </button>
+                    </div>
 
-                    <button
-                      onClick={handleSyncScraper}
-                      disabled={scrapeLoading || !appsScriptUrl}
-                      className={cn(
-                        "flex-1 flex items-center justify-center gap-3 py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all border",
-                        scrapeLoading || !appsScriptUrl
-                          ? "border-white/5 text-slate-600 cursor-not-allowed"
-                          : "border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/5 active:scale-[0.98]"
-                      )}
-                    >
-                      <RefreshCw className="w-5 h-5" />
-                      Sync ke Google Sheets
-                    </button>
+                    {/* Langkah 2: Sinkronisasikan ke Google Sheet & Dashboard */}
+                    <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-indigo-500/10 text-indigo-400 text-xs font-black">
+                          2
+                        </span>
+                        <h4 className="text-white font-bold text-xs uppercase tracking-wider">Langkah 2: Sinkronisasikan</h4>
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        Mentransfer data dari tab <strong>Raw_Data</strong> ke formulir utama Google Sheet dan otomatis memperbarui tampilan dashboard ini.
+                      </p>
+                      <button
+                        onClick={handleSyncScraper}
+                        disabled={scrapeLoading || !appsScriptUrl}
+                        className={cn(
+                          "w-full flex items-center justify-center gap-3 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all border",
+                          scrapeLoading || !appsScriptUrl
+                            ? "border-white/5 text-slate-600 cursor-not-allowed"
+                            : "border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/5 active:scale-[0.98]"
+                        )}
+                      >
+                        {scrapeLoading ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Menyinkronkan...
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="w-4 h-4" />
+                            Sinkronkan APBD Google Sheet
+                          </>
+                        )}
+                      </button>
+                    </div>
 
-                    <button
-                      onClick={handleSyncAPBD}
-                      disabled={loading || !appsScriptUrl}
-                      className={cn(
-                        "flex-1 flex items-center justify-center gap-3 py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all",
-                        loading || !appsScriptUrl
-                          ? "bg-slate-800 text-slate-500 cursor-not-allowed"
-                          : "bg-emerald-600 text-white hover:bg-emerald-500 shadow-lg shadow-emerald-500/20 active:scale-[0.98]"
-                      )}
-                    >
-                      <RefreshCw className={cn("w-5 h-5", loading && "animate-spin")} />
-                      {loading ? 'Menyinkronkan...' : 'Sinkron APBD Google Sheet'}
-                    </button>
+                    {/* Progress steps ketika sinkronisasi sedang berjalan */}
+                    {scrapeLoading && autoStep && (
+                      <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl">
+                        <div className="flex items-center gap-2.5 text-emerald-400 font-bold text-xs">
+                          <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                          <span>{autoStep}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Opsi Opsional */}
+                    <div className="pt-2 border-t border-white/5 space-y-2.5">
+                      <button
+                        onClick={handleFullAutomaticScrapeAndSync}
+                        disabled={scrapeLoading || !appsScriptUrl}
+                        className="w-full text-emerald-400 hover:text-emerald-300 font-bold text-[11px] flex items-center justify-center gap-1.5 py-2.5 hover:bg-emerald-500/5 rounded-xl transition-all border border-dashed border-emerald-500/20 disabled:opacity-50"
+                      >
+                        <Zap className="w-3.5 h-3.5 text-amber-400" />
+                        Alternatif: Jalankan Sinkronisasi Otomatis 1-Klik
+                      </button>
+
+                      <button
+                        onClick={handleSyncAPBD}
+                        disabled={loading || !appsScriptUrl}
+                        className="w-full text-indigo-400 hover:text-indigo-300 font-bold text-[11px] flex items-center justify-center gap-1.5 py-2 hover:bg-indigo-500/5 rounded-xl transition-all border border-dashed border-indigo-500/20 disabled:opacity-50"
+                      >
+                        <RefreshCw className={cn("w-3 h-3", loading && "animate-spin")} />
+                        Hanya Segarkan Tampilan (Ambil data saat ini dari Sheet)
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -913,15 +976,31 @@ export function DataScraper({
 
               {scrapeStatus.type !== 'idle' && (
                 <div className={cn(
-                  "p-4 rounded-2xl border text-sm font-bold flex items-center gap-3 mt-8",
+                  "p-5 rounded-2xl border text-sm font-bold flex flex-col gap-4 mt-8",
                   scrapeStatus.type === 'success' ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-rose-500/10 border-rose-500/20 text-rose-400"
                 )}>
-                  {scrapeStatus.type === 'success' ? (
-                    <CheckCircle2 className="w-5 h-5 shrink-0" />
-                  ) : (
-                    <AlertCircle className="w-5 h-5 shrink-0" />
+                  <div className="flex items-start gap-3">
+                    {scrapeStatus.type === 'success' ? (
+                      <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                    )}
+                    <span className="leading-relaxed">{scrapeStatus.message}</span>
+                  </div>
+
+                  {scrapeStatus.type === 'error' && (
+                    <div className="pt-3 border-t border-rose-500/15 flex flex-wrap gap-2.5">
+                      <a 
+                        href={`https://djpk.kemenkeu.go.id/portal/data/apbd?periode=${periode}&tahun=${tahun}&provinsi=23&pemda=09`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 shadow-lg shadow-rose-600/10 active:scale-[0.98]"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        Buka Portal DJPK Kemenkeu di Browser Anda
+                      </a>
+                    </div>
                   )}
-                  <span>{scrapeStatus.message}</span>
                 </div>
               )}
             </div>

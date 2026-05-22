@@ -9,7 +9,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
 import { useAPBDData } from './hooks/useAPBDData';
-import { formatCurrency, formatBillions } from './lib/formatters';
+import { formatCurrency, formatBillions, formatPercentage } from './lib/formatters';
 import { DashboardHeader } from './components/Layout/DashboardHeader';
 import { Sidebar } from './components/Layout/Sidebar';
 import { StatCard } from './components/Stats/StatCard';
@@ -17,6 +17,7 @@ import { CompositionSummary } from './components/Charts/CompositionSummary';
 import { DataScraper } from './components/Tools/DataScraper';
 import { DataSIKDView } from './components/Views/DataSIKDView';
 import { TABS } from './lib/constants';
+import { AuthModal } from './components/Modals/AuthModal';
 
 export default function App() {
   const {
@@ -44,6 +45,34 @@ export default function App() {
 
   const [searchQuery, setSearchQuery] = useState('');
 
+  // States for Admin Authentication Modal
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [pendingTab, setPendingTab] = useState<'pendapatan' | 'belanja' | 'pembiayaan' | 'tambah-data' | 'data-sikd' | null>(null);
+
+  const handleTabChange = (tab: 'pendapatan' | 'belanja' | 'pembiayaan' | 'tambah-data' | 'data-sikd') => {
+    if (tab === 'tambah-data') {
+      // Selalu tanyai otentikasi setiap kali mengklik menu Tambah Data
+      setPendingTab(tab);
+      setShowAuthModal(true);
+    } else {
+      setActiveTab(tab);
+      // Hapus status otentikasi saat meninggalkan menu Tambah Data agar aman
+      setIsAuthenticated(false);
+      sessionStorage.removeItem('bpkad_auth_session');
+    }
+  };
+
+  const handleAuthSuccess = () => {
+    setIsAuthenticated(true);
+    sessionStorage.setItem('bpkad_auth_session', 'true');
+    setShowAuthModal(false);
+    if (pendingTab) {
+      setActiveTab(pendingTab);
+      setPendingTab(null);
+    }
+  };
+
   const filteredItems = currentViewData.filter(item => 
     item.akun.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -52,7 +81,7 @@ export default function App() {
     <div className="flex min-h-screen text-slate-100 font-sans bg-[#020617]">
       <Sidebar 
         activeTab={activeTab} 
-        onTabChange={setActiveTab}
+        onTabChange={handleTabChange}
         appsScriptUrl={appsScriptUrl}
         setAppsScriptUrl={setAppsScriptUrl}
         loading={loading}
@@ -72,7 +101,7 @@ export default function App() {
               importNewSikdData={importNewSikdData}
               resetToMockData={resetToMockData}
               resetSikdToMockData={resetSikdToMockData}
-              onNavigateToSikd={() => setActiveTab('data-sikd')}
+              onNavigateToSikd={() => handleTabChange('data-sikd')}
               refreshSikdData={refreshSikdData}
               refreshData={refreshData}
               loading={loading}
@@ -122,7 +151,7 @@ export default function App() {
                 />
                 <StatCard 
                   title="Efektivitas (%)" 
-                  value={`${stats.overallPersentase.toFixed(2)}%`}
+                  value={formatPercentage(stats.overallPersentase)}
                   icon={<TrendingUp className="w-6 h-6" />}
                   color="rose"
                   progressBar={stats.overallPersentase}
@@ -137,7 +166,7 @@ export default function App() {
                       <LineChart data={trendData}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
                         <XAxis dataKey="bulan" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v) => formatBillions(v)} />
+                        <YAxis width={115} tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v) => formatBillions(v)} />
                         <Tooltip 
                           contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px' }}
                           formatter={(v) => formatCurrency(v as number)}
@@ -155,7 +184,7 @@ export default function App() {
                       <BarChart data={currentViewData.slice(0, 8)}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
                         <XAxis dataKey="akun" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v) => formatBillions(v)} />
+                        <YAxis width={115} tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v) => formatBillions(v)} />
                         <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px' }} />
                         <Bar dataKey="anggaran" fill="#6366f1" radius={[4, 4, 0, 0]} />
                         <Bar dataKey="realisasi" fill="#10b981" radius={[4, 4, 0, 0]} />
@@ -175,7 +204,7 @@ export default function App() {
                         <div key={i} className="space-y-2">
                           <div className="flex justify-between text-xs">
                             <span className="text-slate-300 truncate pr-4">{item.akun}</span>
-                            <span className="text-white font-bold">{item.persentase}%</span>
+                            <span className="text-white font-bold">{formatPercentage(item.persentase)}</span>
                           </div>
                           <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
                             <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${item.persentase}%` }} />
@@ -223,7 +252,7 @@ export default function App() {
                               "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest",
                               item.persentase >= 60 ? "bg-emerald-400/10 text-emerald-400 border border-emerald-400/20" : "bg-indigo-400/10 text-indigo-400 border border-indigo-400/20"
                             )}>
-                              {item.persentase}%
+                              {formatPercentage(item.persentase)}
                             </span>
                           </td>
                         </tr>
@@ -235,6 +264,20 @@ export default function App() {
             </>
           )}
       </main>
+
+      {/* Admin Authentication Modal */}
+      <AnimatePresence>
+        {showAuthModal && (
+          <AuthModal
+            isOpen={showAuthModal}
+            onClose={() => {
+              setShowAuthModal(false);
+              setPendingTab(null);
+            }}
+            onSuccess={handleAuthSuccess}
+          />
+        )}
+      </AnimatePresence>
     </div>
   </div>
   );
