@@ -103,7 +103,26 @@ export function useAPBDData() {
   };
 
   const getMonthIndex = (month: string) => {
-    return MONTHS.findIndex(m => m.toLowerCase() === (month || '').toLowerCase());
+    if (!month) return -1;
+    const cleanMonth = month.toLowerCase().trim();
+    
+    const exactIdx = MONTHS.findIndex(m => m.toLowerCase() === cleanMonth);
+    if (exactIdx !== -1) return exactIdx;
+
+    const abbreviations = [
+      'jan', 'feb', 'mar', 'apr', 'mei', 'jun',
+      'jul', 'agt', 'sep', 'okt', 'nov', 'des'
+    ];
+    
+    for (let i = MONTHS.length - 1; i >= 0; i--) {
+      const mLower = MONTHS[i].toLowerCase();
+      const abby = abbreviations[i];
+      if (cleanMonth.includes(mLower) || cleanMonth.includes(abby)) {
+        return i;
+      }
+    }
+    
+    return -1;
   };
 
   const availableMonths = useMemo(() => {
@@ -137,11 +156,24 @@ export function useAPBDData() {
     }
 
     // Aggregation for "Semua": Group by Account, take Latest Month Status
+    // If a month has no data (realisasi & anggaran = 0), avoid overwriting a previous month which holds data
     const latestStatusByAccount = filtered.reduce((acc, curr) => {
       const currentMonthIndex = getMonthIndex(curr.bulan);
-      const existingStatusIndex = acc[curr.akun] ? getMonthIndex(acc[curr.akun].bulan) : -Infinity;
+      const existing = acc[curr.akun];
+      if (!existing) {
+        acc[curr.akun] = curr;
+        return acc;
+      }
 
-      if (currentMonthIndex > existingStatusIndex) {
+      const existingStatusIndex = getMonthIndex(existing.bulan);
+      const currHasVal = curr.realisasi > 0 || curr.anggaran > 0;
+      const existHasVal = existing.realisasi > 0 || existing.anggaran > 0;
+
+      if (currHasVal && !existHasVal) {
+        acc[curr.akun] = curr;
+      } else if (!currHasVal && existHasVal) {
+        // Keep existing
+      } else if (currentMonthIndex > existingStatusIndex) {
         acc[curr.akun] = curr;
       }
       return acc;
@@ -164,7 +196,21 @@ export function useAPBDData() {
       const latestAll = data.reduce((acc, curr) => {
         const idx = getMonthIndex(curr.bulan);
         const key = `${curr.kategori}-${curr.akun}`;
-        if (!acc[key] || idx > getMonthIndex(acc[key].bulan)) {
+        const existing = acc[key];
+        if (!existing) {
+          acc[key] = curr;
+          return acc;
+        }
+
+        const existingIdx = getMonthIndex(existing.bulan);
+        const currHasVal = curr.realisasi > 0 || curr.anggaran > 0;
+        const existHasVal = existing.realisasi > 0 || existing.anggaran > 0;
+
+        if (currHasVal && !existHasVal) {
+          acc[key] = curr;
+        } else if (!currHasVal && existHasVal) {
+          // Keep existing
+        } else if (idx > existingIdx) {
           acc[key] = curr;
         }
         return acc;
@@ -183,7 +229,7 @@ export function useAPBDData() {
       { name: 'Pendapatan', value: totals['pendapatan'] || 0, color: APBD_COLORS.pendapatan },
       { name: 'Belanja', value: totals['belanja'] || 0, color: APBD_COLORS.belanja },
       { name: 'Pembiayaan', value: totals['pembiayaan'] || 0, color: APBD_COLORS.pembiayaan }
-    ].filter(item => item.value > 0);
+    ];
   }, [data, selectedMonth]);
 
   return {

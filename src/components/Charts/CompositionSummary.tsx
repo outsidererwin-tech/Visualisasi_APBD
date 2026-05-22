@@ -26,15 +26,15 @@ export function CompositionSummary({ data, selectedMonth }: CompositionSummaryPr
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={data}
+                  data={data.filter(item => item.value > 0)}
                   cx="50%"
                   cy="50%"
                   innerRadius={60}
                   outerRadius={80}
-                  paddingAngle={5}
+                  paddingAngle={data.filter(item => item.value > 0).length > 1 ? 5 : 0}
                   dataKey="value"
                 >
-                  {data.map((entry, index) => (
+                  {data.filter(item => item.value > 0).map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
                   ))}
                 </Pie>
@@ -53,26 +53,48 @@ export function CompositionSummary({ data, selectedMonth }: CompositionSummaryPr
                 />
               </PieChart>
             </ResponsiveContainer>
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
-              <span className="block text-[10px] text-slate-500 font-bold uppercase">Total</span>
-              <span className="block text-xs font-bold text-white">
-                {formatBillions(total)}
-              </span>
-            </div>
+            {(() => {
+              const formattedTotal = formatBillions(total);
+              const totalLength = formattedTotal.length;
+              const totalFontSize = Math.min(12, Math.max(7.5, 188 / totalLength));
+              return (
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none w-[112px] flex flex-col items-center justify-center">
+                  <span className="block text-[10px] text-slate-500 font-bold uppercase mb-0.5">Total</span>
+                  <span 
+                    className="block font-bold text-white tracking-tighter leading-none whitespace-nowrap overflow-hidden text-ellipsis"
+                    style={{ fontSize: `${totalFontSize}px` }}
+                  >
+                    {formattedTotal}
+                  </span>
+                </div>
+              );
+            })()}
           </div>
         </div>
 
         <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-6 w-full">
-          {data.map((item, i) => (
-            <div key={i} className="bg-white/5 p-4 rounded-xl border border-white/5">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{item.name}</span>
+          {data.map((item, i) => {
+            const valStr = formatBillions(item.value);
+            const valLen = valStr.length;
+            const itemFontSize = Math.min(18, Math.max(10, 320 / valLen));
+            return (
+              <div key={i} className="bg-white/5 p-4 rounded-xl border border-white/5 min-w-0 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">{item.name}</span>
+                  </div>
+                  <div 
+                    className="font-black text-white tracking-tight leading-normal whitespace-nowrap overflow-hidden text-ellipsis"
+                    style={{ fontSize: `${itemFontSize}px` }}
+                  >
+                    {valStr}
+                  </div>
+                </div>
+                <div className="text-[10px] text-slate-500 font-medium mt-1">Realisasi Akumulasi</div>
               </div>
-              <div className="text-lg font-black text-white">{formatBillions(item.value)}</div>
-              <div className="text-[10px] text-slate-500 font-medium">Realisasi Akumulasi</div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </motion.div>
     </div>

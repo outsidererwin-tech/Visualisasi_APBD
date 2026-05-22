@@ -736,22 +736,29 @@ export function DataScraper({
 
                 {/* Upload Stat Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                  <div className="bg-white/5 border border-white/5 p-5 rounded-2xl">
-                    <span className="text-[10px] text-slate-400 font-extrabold uppercase">Total Nilai Kotor SIKD</span>
-                    <p className="text-lg font-black text-amber-400 mt-1.5">{formatBillions(extractedStats.totalKotor)}</p>
-                  </div>
-                  <div className="bg-white/5 border border-white/5 p-5 rounded-2xl">
-                    <span className="text-[10px] text-slate-400 font-extrabold uppercase">Total Potongan SIKD</span>
-                    <p className="text-lg font-black text-rose-400 mt-1.5">{formatBillions(extractedStats.totalPotongan)}</p>
-                  </div>
-                  <div className="bg-white/5 border border-white/5 p-5 rounded-2xl">
-                    <span className="text-[10px] text-slate-400 font-extrabold uppercase">Total Nilai Bersih SIKD</span>
-                    <p className="text-lg font-black text-emerald-400 mt-1.5">{formatBillions(extractedStats.totalBersih)}</p>
-                  </div>
-                  <div className="bg-white/5 border border-white/5 p-5 rounded-2xl">
-                    <span className="text-[10px] text-slate-400 font-extrabold uppercase">Total Dana Ditunda SIKD</span>
-                    <p className="text-lg font-black text-sky-400 mt-1.5">{formatBillions(extractedStats.totalTunda)}</p>
-                  </div>
+                  {(() => {
+                    const statsDef = [
+                      { label: "Total Nilai Kotor SIKD", val: formatBillions(extractedStats.totalKotor), col: "text-amber-400" },
+                      { label: "Total Potongan SIKD", val: formatBillions(extractedStats.totalPotongan), col: "text-rose-400" },
+                      { label: "Total Nilai Bersih SIKD", val: formatBillions(extractedStats.totalBersih), col: "text-emerald-400" },
+                      { label: "Total Dana Ditunda SIKD", val: formatBillions(extractedStats.totalTunda), col: "text-sky-400" }
+                    ];
+                    return statsDef.map((st, idx) => {
+                      const valLen = st.val.length;
+                      const fSize = Math.min(18, Math.max(10, 320 / valLen));
+                      return (
+                        <div key={idx} className="bg-white/5 border border-white/5 p-5 rounded-2xl min-w-0">
+                          <span className="text-[10px] text-slate-400 font-extrabold uppercase block truncate">{st.label}</span>
+                          <p 
+                            className={`font-black mt-1.5 whitespace-nowrap overflow-hidden text-ellipsis ${st.col}`}
+                            style={{ fontSize: `${fSize}px` }}
+                          >
+                            {st.val}
+                          </p>
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
 
                 {/* Verification notifications */}

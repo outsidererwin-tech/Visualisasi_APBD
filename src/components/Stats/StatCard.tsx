@@ -37,8 +37,19 @@ export function StatCard({ title, value, icon, color, percentage, progressBar }:
         )}
       </div>
       <div>
-        <p className="text-[11px] font-black text-slate-500 uppercase tracking-[0.2em] mb-2">{title}</p>
-        <h4 className="text-3xl font-black tracking-tight text-white">{value}</h4>
+        <p className="text-[11px] font-black text-slate-500 uppercase tracking-[0.2em] mb-2 truncate">{title}</p>
+        {(() => {
+          const valLen = value.length;
+          const cardFontSize = Math.min(30, Math.max(14, 520 / valLen));
+          return (
+            <h4 
+              className="font-black tracking-tight text-white leading-normal whitespace-nowrap overflow-hidden text-ellipsis"
+              style={{ fontSize: `${cardFontSize}px` }}
+            >
+              {value}
+            </h4>
+          );
+        })()}
       </div>
       
       {progressBar !== undefined && (
