@@ -12,15 +12,16 @@ import {
   Database,
   CloudLightning,
   CheckCircle2,
-  UserCheck
+  UserCheck,
+  Layers
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
 import { TABS } from '../../lib/constants';
 
 interface SidebarProps {
-  activeTab: 'pendapatan' | 'belanja' | 'pembiayaan' | 'tambah-data' | 'data-sikd';
-  onTabChange: (tab: 'pendapatan' | 'belanja' | 'pembiayaan' | 'tambah-data' | 'data-sikd') => void;
+  activeTab: 'pendapatan' | 'belanja' | 'pembiayaan' | 'tambah-data' | 'data-sikd' | 'alokasi-realisasi-sikd';
+  onTabChange: (tab: 'pendapatan' | 'belanja' | 'pembiayaan' | 'tambah-data' | 'data-sikd' | 'alokasi-realisasi-sikd') => void;
   appsScriptUrl: string;
   setAppsScriptUrl: (url: string) => void;
   loading: boolean;
@@ -71,8 +72,14 @@ export function Sidebar({
     },
     { 
       id: 'data-sikd', 
-      label: 'Data SIKD', 
+      label: 'Lacak Salur SIKD', 
       icon: <Database className="w-5 h-5" />, 
+      type: 'tab' 
+    },
+    { 
+      id: 'alokasi-realisasi-sikd', 
+      label: 'Alokasi & Realisasi SIKD', 
+      icon: <Layers className="w-5 h-5" />, 
       type: 'tab' 
     },
   ];

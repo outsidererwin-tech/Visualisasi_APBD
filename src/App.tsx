@@ -16,6 +16,7 @@ import { StatCard } from './components/Stats/StatCard';
 import { CompositionSummary } from './components/Charts/CompositionSummary';
 import { DataScraper } from './components/Tools/DataScraper';
 import { DataSIKDView } from './components/Views/DataSIKDView';
+import { SikdAllocationView } from './components/Views/SikdAllocationView';
 import { TABS } from './lib/constants';
 import { AuthModal } from './components/Modals/AuthModal';
 
@@ -38,9 +39,12 @@ export default function App() {
     refreshSikdData,
     importNewData,
     importNewSikdData,
+    importNewSikdAllocationData,
     resetToMockData,
     resetSikdToMockData,
-    sikdData
+    resetSikdAllocationToMockData,
+    sikdData,
+    sikdAllocationData
   } = useAPBDData();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -48,9 +52,9 @@ export default function App() {
   // States for Admin Authentication Modal
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [pendingTab, setPendingTab] = useState<'pendapatan' | 'belanja' | 'pembiayaan' | 'tambah-data' | 'data-sikd' | null>(null);
+  const [pendingTab, setPendingTab] = useState<'pendapatan' | 'belanja' | 'pembiayaan' | 'tambah-data' | 'data-sikd' | 'alokasi-realisasi-sikd' | null>(null);
 
-  const handleTabChange = (tab: 'pendapatan' | 'belanja' | 'pembiayaan' | 'tambah-data' | 'data-sikd') => {
+  const handleTabChange = (tab: 'pendapatan' | 'belanja' | 'pembiayaan' | 'tambah-data' | 'data-sikd' | 'alokasi-realisasi-sikd') => {
     if (tab === 'tambah-data') {
       // Selalu tanyai otentikasi setiap kali mengklik menu Tambah Data
       setPendingTab(tab);
@@ -99,9 +103,12 @@ export default function App() {
               appsScriptUrl={appsScriptUrl} 
               importNewData={importNewData} 
               importNewSikdData={importNewSikdData}
+              importNewSikdAllocationData={importNewSikdAllocationData}
               resetToMockData={resetToMockData}
               resetSikdToMockData={resetSikdToMockData}
+              resetSikdAllocationToMockData={resetSikdAllocationToMockData}
               onNavigateToSikd={() => handleTabChange('data-sikd')}
+              onNavigateToAllocation={() => handleTabChange('alokasi-realisasi-sikd')}
               refreshSikdData={refreshSikdData}
               refreshData={refreshData}
               loading={loading}
@@ -110,6 +117,10 @@ export default function App() {
           ) : activeTab === 'data-sikd' ? (
             <DataSIKDView 
               sikdData={sikdData}
+            />
+          ) : activeTab === 'alokasi-realisasi-sikd' ? (
+            <SikdAllocationView 
+              sikdAllocationData={sikdAllocationData}
             />
           ) : (
             <>

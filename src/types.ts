@@ -21,6 +21,15 @@ export interface SikdRecord {
   lkt: string;           // LKT
 }
 
+export interface SikdAllocationRecord {
+  id?: string;
+  kode: string;          // Kode
+  uraian: string;        // Uraian
+  pagu: number;          // Pagu (Anggaran)
+  realisasi: number;     // Realisasi
+  rasio: number;         // Rasio (%)
+}
+
 export interface DashboardStats {
   totalAnggaran: number;
   totalRealisasi: number;

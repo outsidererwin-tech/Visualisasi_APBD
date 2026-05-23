@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect } from 'react';
-import { APBDData, SikdRecord } from '../types';
+import { APBDData, SikdRecord, SikdAllocationRecord } from '../types';
 import { APBDService } from '../services/apbdService';
 import { MOCK_DATA } from '../mockData';
 import { MOCK_SIKD_DATA } from '../mockSikdData';
+import { MOCK_SIKD_ALLOCATION_DATA } from '../mockSikdAllocationData';
 import { APBD_COLORS, MONTHS } from '../lib/constants';
 
 export function useAPBDData() {
@@ -30,11 +31,23 @@ export function useAPBDData() {
     return MOCK_SIKD_DATA;
   });
 
+  const [sikdAllocationData, setSikdAllocationData] = useState<SikdAllocationRecord[]>(() => {
+    const local = localStorage.getItem('sikd_allocation_custom_data');
+    if (local) {
+      try {
+        return JSON.parse(local);
+      } catch (e) {
+        return MOCK_SIKD_ALLOCATION_DATA;
+      }
+    }
+    return MOCK_SIKD_ALLOCATION_DATA;
+  });
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [appsScriptUrl, setAppsScriptUrl] = useState<string>(() => localStorage.getItem('apbd_gas_url') || '');
   const [selectedMonth, setSelectedMonth] = useState<string>('Semua');
-  const [activeTab, setActiveTab] = useState<'pendapatan' | 'belanja' | 'pembiayaan' | 'tambah-data' | 'data-sikd'>('pendapatan');
+  const [activeTab, setActiveTab] = useState<'pendapatan' | 'belanja' | 'pembiayaan' | 'tambah-data' | 'data-sikd' | 'alokasi-realisasi-sikd'>('pendapatan');
 
   // Simpan URL ke localStorage
   useEffect(() => {
@@ -92,6 +105,11 @@ export function useAPBDData() {
     localStorage.setItem('sikd_custom_data', JSON.stringify(newData));
   };
 
+  const importNewSikdAllocationData = (newData: SikdAllocationRecord[]) => {
+    setSikdAllocationData(newData);
+    localStorage.setItem('sikd_allocation_custom_data', JSON.stringify(newData));
+  };
+
   const resetToMockData = () => {
     setData(MOCK_DATA);
     localStorage.removeItem('apbd_custom_data');
@@ -100,6 +118,11 @@ export function useAPBDData() {
   const resetSikdToMockData = () => {
     setSikdData(MOCK_SIKD_DATA);
     localStorage.removeItem('sikd_custom_data');
+  };
+
+  const resetSikdAllocationToMockData = () => {
+    setSikdAllocationData(MOCK_SIKD_ALLOCATION_DATA);
+    localStorage.removeItem('sikd_allocation_custom_data');
   };
 
   const getMonthIndex = (month: string) => {
@@ -235,6 +258,7 @@ export function useAPBDData() {
   return {
     data,
     sikdData,
+    sikdAllocationData,
     loading,
     error,
     appsScriptUrl,
@@ -252,7 +276,9 @@ export function useAPBDData() {
     refreshSikdData,
     importNewData,
     importNewSikdData,
+    importNewSikdAllocationData,
     resetToMockData,
-    resetSikdToMockData
+    resetSikdToMockData,
+    resetSikdAllocationToMockData
   };
 }

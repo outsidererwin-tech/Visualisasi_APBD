@@ -2,12 +2,13 @@ import React, { useState, useRef, useMemo } from 'react';
 import { 
   CloudDownload, Loader2, CheckCircle2, AlertCircle, ExternalLink, 
   Upload, Trash2, FileSpreadsheet, RefreshCw, Check, ArrowRight, Table,
-  TrendingUp, TrendingDown, Scale, PieChart as PieIcon, Info, Database, Zap
+  TrendingUp, TrendingDown, Scale, PieChart as PieIcon, Info, Database, Zap,
+  Layers, Coins, Percent
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
 import * as XLSX from 'xlsx';
-import { APBDData, SikdRecord } from '../../types';
+import { APBDData, SikdRecord, SikdAllocationRecord } from '../../types';
 import { MONTHS } from '../../lib/constants';
 import { formatCurrency, formatBillions, safeParseNumber } from '../../lib/formatters';
 
@@ -15,9 +16,12 @@ interface DataScraperProps {
   appsScriptUrl: string;
   importNewData: (newData: APBDData[]) => void;
   importNewSikdData: (newData: SikdRecord[]) => void;
+  importNewSikdAllocationData: (newData: SikdAllocationRecord[]) => void;
   resetToMockData: () => void;
   resetSikdToMockData: () => void;
+  resetSikdAllocationToMockData: () => void;
   onNavigateToSikd: () => void;
+  onNavigateToAllocation: () => void;
   refreshSikdData: (url?: string) => Promise<boolean>;
   refreshData: (url?: string) => Promise<boolean>;
   loading: boolean;
@@ -28,15 +32,20 @@ export function DataScraper({
   appsScriptUrl, 
   importNewData, 
   importNewSikdData,
+  importNewSikdAllocationData,
   resetToMockData, 
   resetSikdToMockData,
+  resetSikdAllocationToMockData,
   onNavigateToSikd,
+  onNavigateToAllocation,
   refreshSikdData,
   refreshData,
   loading,
   error
 }: DataScraperProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'upload' | 'api-scraper'>('api-scraper');
+  // Option tab state supporting the 3 exact methods requested:
+  // 'lacak-salur' | 'alokasi-realisasi' | 'api-djpk'
+  const [activeSubTab, setActiveSubTab] = useState<'lacak-salur' | 'alokasi-realisasi' | 'api-djpk'>('lacak-salur');
 
   // ---------- Sync States ----------
   const [syncStatus, setSyncStatus] = useState<{ type: 'idle' | 'success' | 'error', message: string }>({ type: 'idle', message: '' });
@@ -119,7 +128,10 @@ export function DataScraper({
   const [processing, setProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const [extractedData, setExtractedData] = useState<APBDData[]>([]);
+  // Storage for currently extracted lists to preview on upload
+  const [extractedLacakSalur, setExtractedLacakSalur] = useState<SikdRecord[]>([]);
+  const [extractedAlokasiRealisasi, setExtractedAlokasiRealisasi] = useState<SikdAllocationRecord[]>([]);
+  
   const [uploadStatus, setUploadStatus] = useState<{ type: 'success' | 'error' | 'idle', message: string }>({ type: 'idle', message: '' });
 
   // ---------- API Scraper Handlers ----------
@@ -190,7 +202,7 @@ export function DataScraper({
     }
   };
 
-  // NEW: One-click Full Automatic Scrape + Sync + App Refresh Flow
+  // One-click Full Automatic Scrape + Sync + App Refresh Flow
   const handleFullAutomaticScrapeAndSync = async () => {
     if (!appsScriptUrl) {
       setScrapeStatus({ type: 'error', message: 'Silakan atur URL Google Apps Script terlebih dahulu.' });
@@ -238,10 +250,10 @@ export function DataScraper({
     } catch (err: any) {
       let msg = err.message || 'Gagal melakukan Sinkronisasi Otomatis. Pastikan URL Apps Script yang Anda pasang sudah benar dan didukung.';
       if (msg.toLowerCase().includes('failed to fetch')) {
-        msg = 'Koneksi ke Google Apps Script Gagal (Failed to fetch). Pastikan URL Google Apps Script Anda benar, Web App telah disebarkan (deployed) sebagai "Anyone" (Siapa Saja), serta tidak diblokir oleh ekstensi browser Anda.';
+        msg = 'Koneksi gagal (Failed to fetch). Hubungan internet Anda dengan Google Apps Script terputus atau URL script Anda salah.';
       }
-      setScrapeStatus({
-        type: 'error',
+      setScrapeStatus({ 
+        type: 'error', 
         message: msg
       });
     } finally {
@@ -291,32 +303,14 @@ export function DataScraper({
     return safeParseNumber(val);
   };
 
-  const detectKategori = (itemName: string): 'pendapatan' | 'belanja' | 'pembiayaan' => {
-    const clean = itemName.toLowerCase().trim();
-    if (clean.includes('belanja') || clean.includes('gaji') || clean.includes('beban') || clean.includes('biaya') || clean.includes('pegawai') || clean.includes('barang') || clean.includes('jasa') || clean.includes('modal') || clean.includes('subsidi') || clean.includes('bantuan keuangan') || clean.includes('transfer kel')) {
-      if (clean.includes('pendapatan transfer') || clean.includes('transfer masuk') || clean.includes('dana transfer')) {
-        return 'pendapatan';
-      }
-      return 'belanja';
-    }
-    if (clean.includes('pembiayaan') || clean.includes('penerimaan pembiayaan') || clean.includes('pengeluaran pembiayaan') || clean.includes('silpa') || clean.includes('defisit')) {
-      return 'pembiayaan';
-    }
-    if (clean.includes('pendapatan') || clean.includes('pajak') || clean.includes('retribusi') || clean.includes('pad') || clean.includes('bagi hasil') || clean.includes('dau') || clean.includes('dak') || clean.includes('hibah')) {
-      return 'pendapatan';
-    }
-    return 'belanja';
-  };
-
   // Automated Analysis on Upload matching SIKD columns:
   // Tanggal, Jenis Dana, Uraian, Periode, Nilai Kotor, Potongan, Nilai Bersih, Tunda, Status, LKT
-  const performAutoAnalysis = (rows: any[][]) => {
+  const performLacakSalurAnalysis = (rows: any[][]) => {
     setProcessing(true);
-    setUploadStatus({ type: 'idle', message: 'Menganalisis skema data otomatis...' });
+    setUploadStatus({ type: 'idle', message: 'Menganalisis skema data Lacak Salur SIKD otomatis...' });
 
     setTimeout(() => {
       try {
-        // 1. Detect Header Row using score
         let headerRowIdx = -1;
         let maxScore = -1;
 
@@ -347,7 +341,7 @@ export function DataScraper({
         }
 
         if (headerRowIdx === -1) {
-          headerRowIdx = 0; // Fallback to first row
+          headerRowIdx = 0; 
         }
 
         const headers = (rows[headerRowIdx] || []).map(h => h?.toString().toLowerCase().trim() || '');
@@ -377,7 +371,7 @@ export function DataScraper({
           else if (clean.includes('lkt')) jLkt = idx;
         });
 
-        // Positional defaults fallback if headers cannot be resolved or mapped
+        // Positional defaults fallback
         if (jTanggal === -1) jTanggal = 0;
         if (jJenisDana === -1) jJenisDana = headers.length > 1 ? 1 : 0;
         if (jUraian === -1) jUraian = headers.length > 2 ? 2 : 0;
@@ -426,16 +420,15 @@ export function DataScraper({
         });
 
         if (parsed.length === 0) {
-          throw new Error('Sistem gagal membaca baris data SIKD yang valid. Pastikan format tabel sesuai.');
+          throw new Error('Sistem gagal membaca baris data transaksi SIKD yang valid.');
         }
 
-        // Apply instant data import for SIKD ONLY
+        // Save imported list to master state
         importNewSikdData(parsed);
-
-        setExtractedData(parsed);
+        setExtractedLacakSalur(parsed);
         setUploadStatus({ 
           type: 'success', 
-          message: `Sukses! ${parsed.length} baris data transaksi SIKD berhasil diurai & dianalisis otomatis!` 
+          message: `Sukses! ${parsed.length} baris data transaksi Lacak Salur SIKD berhasil diurai & dianalisis otomatis!` 
         });
 
       } catch (err: any) {
@@ -449,11 +442,132 @@ export function DataScraper({
     }, 1200);
   };
 
+  // NEW: Automated Analysis on Upload matching Alokasi & Realisasi SIKD columns:
+  // Kode, Uraian, Pagu, Realisasi, Rasio
+  const performAlokasiRealisasiAnalysis = (rows: any[][]) => {
+    setProcessing(true);
+    setUploadStatus({ type: 'idle', message: 'Menganalisis skema data Alokasi & Realisasi SIKD otomatis...' });
+
+    setTimeout(() => {
+      try {
+        let headerRowIdx = -1;
+        let maxScore = -1;
+
+        for (let r = 0; r < Math.min(rows.length, 20); r++) {
+          const row = rows[r];
+          if (!row || row.length < 2) continue;
+
+          let score = 0;
+          row.forEach(cell => {
+            if (!cell) return;
+            const text = cell.toString().toLowerCase();
+            if (text.includes('kode') || text.includes('kd_rek') || text === 'rekening' || text === 'kd') score += 2;
+            if (text.includes('uraian') || text.includes('keterangan') || text.includes('nama') || text === 'akun') score += 2;
+            if (text.includes('pagu') || text.includes('anggaran') || text.includes('alokasi')) score += 2;
+            if (text.includes('realisasi') || text.includes('salur') || text.includes('real')) score += 2;
+            if (text.includes('rasio') || text.includes('persen') || text.includes('%')) score += 2;
+          });
+
+          if (score > maxScore && score >= 2) {
+            maxScore = score;
+            headerRowIdx = r;
+          }
+        }
+
+        if (headerRowIdx === -1) {
+          headerRowIdx = 0;
+        }
+
+        const headers = (rows[headerRowIdx] || []).map(h => h?.toString().toLowerCase().trim() || '');
+
+        let jKode = -1;
+        let jUraian = -1;
+        let jPagu = -1;
+        let jRealisasi = -1;
+        let jRasio = -1;
+
+        headers.forEach((clean, idx) => {
+          if (!clean) return;
+          if (clean.includes('kode') || clean.includes('kd_rek') || clean === 'rekening' || clean === 'kd') jKode = idx;
+          else if (clean.includes('uraian') || clean.includes('keterangan') || clean.includes("rekening") || clean.includes('nama') || clean === 'akun') jUraian = idx;
+          else if (clean.includes('pagu') || clean.includes('anggaran') || clean.includes('alokasi')) jPagu = idx;
+          else if (clean.includes('realisasi') || clean.includes('salur') || clean.includes('real')) jRealisasi = idx;
+          else if (clean.includes('rasio') || clean.includes('persen') || clean.includes('%')) jRasio = idx;
+        });
+
+        // Fallbacks positional defaults
+        if (jKode === -1) jKode = 0;
+        if (jUraian === -1) jUraian = headers.length > 1 ? 1 : 0;
+        if (jPagu === -1) jPagu = headers.length > 2 ? 2 : 0;
+        if (jRealisasi === -1) jRealisasi = headers.length > 3 ? 3 : 0;
+        if (jRasio === -1) jRasio = headers.length > 4 ? 4 : 0;
+
+        const dataRows = rows.slice(headerRowIdx + 1);
+        const parsed: SikdAllocationRecord[] = [];
+
+        dataRows.forEach(row => {
+          if (!row || row.length === 0) return;
+
+          const kodeVal = row[jKode] !== undefined && row[jKode] !== null ? row[jKode].toString().trim() : '';
+          const uraianVal = row[jUraian] !== undefined && row[jUraian] !== null ? row[jUraian].toString().trim() : '';
+
+          const cleanUraian = uraianVal.replace(/[^a-zA-Z0-9]/g, '').trim();
+          if (!uraianVal || uraianVal === '-' || uraianVal === '.' || cleanUraian === '') return;
+          if (uraianVal.toLowerCase().includes('jumlah') || uraianVal.toLowerCase().includes('total')) return;
+
+          const pagu = parseMoneyValue(row[jPagu]);
+          const realisasi = parseMoneyValue(row[jRealisasi]);
+          
+          let rasio = 0;
+          if (row[jRasio] !== undefined && row[jRasio] !== null) {
+            rasio = parseMoneyValue(row[jRasio]);
+            // Convert e.g. 0.25 to 25.0
+            if (rasio > 0 && rasio < 1) {
+              rasio = parseFloat((rasio * 100).toFixed(4));
+            }
+          } else {
+            rasio = pagu > 0 ? parseFloat(((realisasi / pagu) * 100).toFixed(4)) : 0;
+          }
+
+          parsed.push({
+            kode: kodeVal,
+            uraian: uraianVal,
+            pagu,
+            realisasi,
+            rasio
+          });
+        });
+
+        if (parsed.length === 0) {
+          throw new Error('Sistem gagal membaca baris data Alokasi & Realisasi SIKD yang valid.');
+        }
+
+        // Save imported list to master state
+        importNewSikdAllocationData(parsed);
+        setExtractedAlokasiRealisasi(parsed);
+        setUploadStatus({ 
+          type: 'success', 
+          message: `Sukses! ${parsed.length} baris data Alokasi & Realisasi SIKD berhasil diurai & dianalisis otomatis!` 
+        });
+
+      } catch (err: any) {
+        setUploadStatus({ 
+          type: 'error', 
+          message: err.message || 'Gagal mengurai file alokasi otomatis. Hubungi admin atau periksa kembali file Anda.' 
+        });
+      } finally {
+        setProcessing(false);
+      }
+    }, 1200);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const selectedFile = e.target.files[0];
       setFile(selectedFile);
-      setExtractedData([]);
+      setExtractedLacakSalur([]);
+      setExtractedAlokasiRealisasi([]);
+      setUploadStatus({ type: 'idle', message: '' });
       
       const reader = new FileReader();
       const ext = selectedFile.name.split('.').pop()?.toLowerCase();
@@ -462,23 +576,33 @@ export function DataScraper({
         reader.onload = (event) => {
           const text = event.target?.result as string;
           const rows = parseCSV(text);
-          performAutoAnalysis(rows);
+          if (activeSubTab === 'lacak-salur') {
+            performLacakSalurAnalysis(rows);
+          } else {
+            performAlokasiRealisasiAnalysis(rows);
+          }
         };
         reader.readAsText(selectedFile);
       } else if (ext === 'json') {
         reader.onload = (event) => {
           try {
             const json = JSON.parse(event.target?.result as string);
+            let matrix: any[][] = [];
             if (Array.isArray(json)) {
               if (json.length > 0 && typeof json[0] === 'object' && !Array.isArray(json[0])) {
                 const keys = Object.keys(json[0]);
-                const matrix = [keys, ...json.map(item => keys.map(k => item[k]))];
-                performAutoAnalysis(matrix);
+                matrix = [keys, ...json.map(item => keys.map(k => item[k]))];
               } else if (Array.isArray(json[0])) {
-                performAutoAnalysis(json);
+                matrix = json;
               }
             } else {
               throw new Error('JSON is not an array');
+            }
+            
+            if (activeSubTab === 'lacak-salur') {
+              performLacakSalurAnalysis(matrix);
+            } else {
+              performAlokasiRealisasiAnalysis(matrix);
             }
           } catch (e) {
             setUploadStatus({ type: 'error', message: 'Format JSON invalid.' });
@@ -493,7 +617,11 @@ export function DataScraper({
             const firstSheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[firstSheetName];
             const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
-            performAutoAnalysis(rows);
+            if (activeSubTab === 'lacak-salur') {
+              performLacakSalurAnalysis(rows);
+            } else {
+              performAlokasiRealisasiAnalysis(rows);
+            }
           } catch (e) {
             setUploadStatus({ type: 'error', message: 'Gagal menguraikan berkas Excel.' });
           }
@@ -507,33 +635,60 @@ export function DataScraper({
     fileInputRef.current?.click();
   };
 
-  const handleResetData = () => {
-    const confirm = window.confirm('Apakah Anda yakin ingin mengatur ulang data SIKD & APBD ke mock data awal?');
+  const handleResetDataLacakSalur = () => {
+    const confirm = window.confirm('Apakah Anda yakin ingin mengatur ulang data Lacak Salur SIKD ke Mock Data awal?');
     if (confirm) {
-      resetToMockData();
       resetSikdToMockData();
       setFile(null);
-      setExtractedData([]);
+      setExtractedLacakSalur([]);
       setUploadStatus({ type: 'idle', message: '' });
-      alert('Data berhasil di-restore!');
+      alert('Data Lacak Salur SIKD berhasil di-restore!');
+    }
+  };
+
+  const handleResetDataAlokasiRealisasi = () => {
+    const confirm = window.confirm('Apakah Anda yakin ingin mengatur ulang data Alokasi & Realisasi SIKD ke Mock Data awal?');
+    if (confirm) {
+      resetSikdAllocationToMockData();
+      setFile(null);
+      setExtractedAlokasiRealisasi([]);
+      setUploadStatus({ type: 'idle', message: '' });
+      alert('Data Alokasi & Realisasi SIKD berhasil di-restore!');
     }
   };
 
   // High-level calculations of extracted data for summary presentation
-  const extractedStats = useMemo(() => {
-    if (extractedData.length === 0) return { totalKotor: 0, totalPotongan: 0, totalBersih: 0, totalTunda: 0 };
-    const totalKotor = extractedData.reduce((acc, curr) => acc + curr.nilaiKotor, 0);
-    const totalPotongan = extractedData.reduce((acc, curr) => acc + curr.potongan, 0);
-    const totalBersih = extractedData.reduce((acc, curr) => acc + curr.nilaiBersih, 0);
-    const totalTunda = extractedData.reduce((acc, curr) => acc + curr.tunda, 0);
+  const extractedStatsLacakSalur = useMemo(() => {
+    if (extractedLacakSalur.length === 0) return { totalKotor: 0, totalPotongan: 0, totalBersih: 0, totalTunda: 0 };
+    const totalKotor = extractedLacakSalur.reduce((acc, curr) => acc + (curr.nilaiKotor || 0), 0);
+    const totalPotongan = extractedLacakSalur.reduce((acc, curr) => acc + (curr.potongan || 0), 0);
+    const totalBersih = extractedLacakSalur.reduce((acc, curr) => acc + (curr.nilaiBersih || 0), 0);
+    const totalTunda = extractedLacakSalur.reduce((acc, curr) => acc + (curr.tunda || 0), 0);
     return { totalKotor, totalPotongan, totalBersih, totalTunda };
-  }, [extractedData]);
+  }, [extractedLacakSalur]);
+
+  const extractedStatsAlokasiRealisasi = useMemo(() => {
+    if (extractedAlokasiRealisasi.length === 0) return { totalPagu: 0, totalRealisasi: 0, avgRasio: 0 };
+    // Identify root codes dynamically without double counting nested children
+    const rootNodes = extractedAlokasiRealisasi.filter(item => {
+      if (/^\d{3}$/.test(item.kode)) return false;
+      const hasParent = extractedAlokasiRealisasi.some(other => {
+        if (other.kode === item.kode) return false;
+        if (/^\d{3}$/.test(other.kode)) return false;
+        return item.kode.startsWith(other.kode) && other.kode.length < item.kode.length;
+      });
+      return !hasParent;
+    });
+    const target = rootNodes.length > 0 ? rootNodes : extractedAlokasiRealisasi;
+    const totalPagu = target.reduce((acc, curr) => acc + (curr.pagu || 0), 0);
+    const totalRealisasi = target.reduce((acc, curr) => acc + (curr.realisasi || 0), 0);
+    const avgRasio = totalPagu > 0 ? (totalRealisasi / totalPagu) * 100 : 0;
+    return { totalPagu, totalRealisasi, avgRasio };
+  }, [extractedAlokasiRealisasi]);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       
-
-
       {/* Sync Status Notifications */}
       {syncStatus.type !== 'idle' && (
         <div className={cn(
@@ -549,44 +704,68 @@ export function DataScraper({
         </div>
       )}
       
-      {/* Subtab Segmented Switcher */}
-      <div className="flex bg-slate-900 border border-white/5 p-1 rounded-2xl max-w-lg mx-auto shadow-inner relative z-20">
+      {/* 3 Methods Switching Control panel */}
+      <div className="flex bg-slate-900 border border-white/5 p-1 rounded-2xl max-w-2xl mx-auto shadow-inner relative z-20">
         <button
-          onClick={() => setActiveSubTab('upload')}
+          onClick={() => {
+            setActiveSubTab('lacak-salur');
+            setFile(null);
+            setUploadStatus({ type: 'idle', message: '' });
+          }}
           className={cn(
-            "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-[11px] uppercase tracking-wider transition-all",
-            activeSubTab === 'upload' 
+            "flex-1 flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all",
+            activeSubTab === 'lacak-salur' 
               ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" 
               : "text-slate-400 hover:text-slate-200"
           )}
         >
-          <FileSpreadsheet className="w-3.5 h-3.5" />
-          Metode 1: Unggah SIKD
+          <Database className="w-4 h-4" />
+          METODE 1: Unggah Lacak Salur SIKD
         </button>
         <button
-          onClick={() => setActiveSubTab('api-scraper')}
+          onClick={() => {
+            setActiveSubTab('alokasi-realisasi');
+            setFile(null);
+            setUploadStatus({ type: 'idle', message: '' });
+          }}
           className={cn(
-            "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-[11px] uppercase tracking-wider transition-all",
-            activeSubTab === 'api-scraper' 
+            "flex-1 flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all",
+            activeSubTab === 'alokasi-realisasi' 
               ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" 
               : "text-slate-400 hover:text-slate-200"
           )}
         >
-          <CloudDownload className="w-3.5 h-3.5" />
-          Metode 2: API DJPK
+          <Layers className="w-4 h-4" />
+          METODE 2: Unggah Alokasi & Realisasi SIKD
+        </button>
+        <button
+          onClick={() => {
+            setActiveSubTab('api-djpk');
+            setFile(null);
+            setUploadStatus({ type: 'idle', message: '' });
+          }}
+          className={cn(
+            "flex-1 flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all",
+            activeSubTab === 'api-djpk' 
+              ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" 
+              : "text-slate-400 hover:text-slate-200"
+          )}
+        >
+          <CloudDownload className="w-4 h-4" />
+          METODE 3: API DJPK
         </button>
       </div>
 
       <AnimatePresence mode="wait">
         
-        {/* Method 1: Automated File Upload */}
-        {activeSubTab === 'upload' && (
+        {/* Method 1: Automated File Upload (Lacak Salur SIKD) */}
+        {activeSubTab === 'lacak-salur' && (
           <motion.div
-            key="upload"
+            key="lacak-salur"
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -15 }}
-            className="space-y-8 animate-in"
+            className="space-y-8"
           >
             {/* Guide & Upload Area */}
             <div className="bg-white/5 border border-white/10 rounded-3xl p-8 backdrop-blur-xl">
@@ -597,11 +776,11 @@ export function DataScraper({
                   <div className="space-y-4">
                     <div>
                       <h2 className="text-xl font-black text-white tracking-tight flex items-center gap-2.5">
-                        <Upload className="w-5 h-5 text-emerald-400" />
-                        Unggah Berkas Laporan SIKD
+                        <Upload className="w-5 h-5 text-indigo-400" />
+                        Unggah Berkas Lacak Salur SIKD
                       </h2>
-                      <p className="text-slate-400 text-sm mt-1">
-                        Unggah file Excel (.xlsx), CSV, atau JSON Anda. Sistem akan mencari tabel, menemukan kolom, dan menerjemahkannya secara otomatis.
+                      <p className="text-slate-400 text-sm mt-1 font-sans">
+                        Unggah file Excel (.xlsx), CSV, atau JSON data transaksi penyaluran SIKD. Sistem memetakan kolom secara cerdas & otomatis.
                       </p>
                     </div>
 
@@ -634,7 +813,7 @@ export function DataScraper({
                     className={cn(
                       "group border-2 border-dashed rounded-[2rem] p-10 flex flex-col items-center justify-center text-center cursor-pointer transition-all aspect-[21/9] min-h-[220px]",
                       dragOver 
-                        ? "border-emerald-500 bg-emerald-500/10 scale-[1.01]" 
+                        ? "border-indigo-500 bg-indigo-500/10 scale-[1.01]" 
                         : "border-white/10 hover:border-indigo-500/50 bg-black/10 hover:bg-white/[0.02]"
                     )}
                   >
@@ -650,8 +829,8 @@ export function DataScraper({
                       <div className="space-y-4">
                         <Loader2 className="w-10 h-10 text-indigo-400 animate-spin mx-auto" />
                         <div>
-                          <p className="text-white font-black text-sm">Sedang Menganalisis Skema Berkas...</p>
-                          <p className="text-xs text-slate-500 mt-1">Mengurai, memetakan, dan menyusun relasi data APBD Kabupaten Sumbawa Barat</p>
+                          <p className="text-white font-black text-sm">Sedang Menganalisis Skema Lacak Salur SIKD...</p>
+                          <p className="text-xs text-slate-500 mt-1">Mengurai, men-desimalisasi, dan menyusun data transaksi luring Anda secara aman...</p>
                         </div>
                       </div>
                     ) : file ? (
@@ -670,7 +849,7 @@ export function DataScraper({
                           <Upload className="w-6 h-6 text-slate-400 group-hover:text-indigo-400" />
                         </div>
                         <div>
-                          <p className="text-slate-200 font-bold text-sm">Tarik dan letakkan file Anda di sini atau <span className="text-indigo-400 hover:underline">Telusuri</span></p>
+                          <p className="text-slate-200 font-bold text-sm">Tarik dan letakkan file Lacak Salur SIKD di sini atau <span className="text-indigo-400 hover:underline">Telusuri</span></p>
                           <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">Mendukung format spreadsheet Excel (.xlsx, .xls), CSV, atau JSON</p>
                         </div>
                       </div>
@@ -683,19 +862,19 @@ export function DataScraper({
                   <div className="space-y-4">
                     <h3 className="text-white font-bold flex items-center gap-2 text-xs uppercase tracking-wider">
                       <Check className="w-4 h-4 text-emerald-400" />
-                      Mengapa Tanpa Konfigurasi Manual?
+                      Neural Heuristics & Decimals
                     </h3>
                     <p className="text-xs text-slate-400 leading-relaxed">
-                      Sistem kini menerapkan <strong>Neural Heuristics</strong> yang memindai struktur baris pertama, mendeteksi header secara asinkron, dan menyinkronkan data langsung ke target SIKD luring Anda dalam waktu sekian detik.
+                      Sistem menerapkan pemetaan kolom dinamis untuk menemukan transaksi penyaluran, rasio, potongan, dan tundaan real-time. Semua angka terbaca presisi desimalnya tanpa pembulatan.
                     </p>
                   </div>
 
                   <div className="pt-6 border-t border-white/5 mt-6">
                     <button
-                      onClick={handleResetData}
+                      onClick={handleResetDataLacakSalur}
                       className="w-full py-3 bg-red-600/10 hover:bg-red-600/20 border border-red-500/20 text-red-400 rounded-xl font-bold text-xs uppercase tracking-wider transition-all"
                     >
-                      Restore ke Mock Data Awal
+                      Restore ke Mock Data Lacak Salur
                     </button>
                   </div>
                 </div>
@@ -703,10 +882,8 @@ export function DataScraper({
               </div>
             </div>
 
-
-
             {/* Auto Analysis Result Deck */}
-            {extractedData.length > 0 && (
+            {extractedLacakSalur.length > 0 && (
               <motion.div
                 initial={{ opacity: 0, scale: 0.98 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -717,20 +894,20 @@ export function DataScraper({
                     <div className="flex items-center gap-2.5">
                       <span className="w-3 h-3 bg-emerald-400 rounded-full animate-ping" />
                       <h3 className="text-lg font-black text-white flex items-center gap-2">
-                        Analisis Laporan Berhasil!
+                        Analisis Berhasil Diimpor!
                       </h3>
                     </div>
-                    <p className="text-xs text-slate-400">
-                      Sistem luring sukses memetakan dan mengunggah {extractedData.length} akun data anggaran ke Dasbor SIKD.
+                    <p className="text-xs text-slate-400 font-sans">
+                      Sistem luring sukses memetakan dan mengunggah {extractedLacakSalur.length} baris data laporan ke sistem Lacak Salur SIKD.
                     </p>
                   </div>
 
                   <button
                     onClick={onNavigateToSikd}
-                    className="w-full md:w-auto px-8 py-4 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-white font-black text-xs uppercase tracking-widest rounded-2xl shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2.5 active:scale-[0.98] transition-all"
+                    className="w-full md:w-auto px-8 py-4 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-black text-xs uppercase tracking-widest rounded-2xl shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2.5 active:scale-[0.98] transition-all"
                   >
-                    Buka Visualisasi Data SIKD
-                    <ArrowRight className="w-4 h-4 animate-pulse" />
+                    Buka visualisasi Lacak Salur SIKD
+                    <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
 
@@ -738,14 +915,14 @@ export function DataScraper({
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                   {(() => {
                     const statsDef = [
-                      { label: "Total Nilai Kotor SIKD", val: formatBillions(extractedStats.totalKotor), col: "text-amber-400" },
-                      { label: "Total Potongan SIKD", val: formatBillions(extractedStats.totalPotongan), col: "text-rose-400" },
-                      { label: "Total Nilai Bersih SIKD", val: formatBillions(extractedStats.totalBersih), col: "text-emerald-400" },
-                      { label: "Total Dana Ditunda SIKD", val: formatBillions(extractedStats.totalTunda), col: "text-sky-400" }
+                      { label: "Total Nilai Kotor SIKD", val: formatCurrency(extractedStatsLacakSalur.totalKotor), col: "text-amber-400" },
+                      { label: "Total Potongan SIKD", val: formatCurrency(extractedStatsLacakSalur.totalPotongan), col: "text-rose-400" },
+                      { label: "Total Nilai Bersih SIKD", val: formatCurrency(extractedStatsLacakSalur.totalBersih), col: "text-emerald-400" },
+                      { label: "Total Dana Ditunda SIKD", val: formatCurrency(extractedStatsLacakSalur.totalTunda), col: "text-sky-400" }
                     ];
                     return statsDef.map((st, idx) => {
                       const valLen = st.val.length;
-                      const fSize = Math.min(18, Math.max(10, 320 / valLen));
+                      const fSize = Math.max(10, Math.min(18, 320 / valLen));
                       return (
                         <div key={idx} className="bg-white/5 border border-white/5 p-5 rounded-2xl min-w-0">
                           <span className="text-[10px] text-slate-400 font-extrabold uppercase block truncate">{st.label}</span>
@@ -761,7 +938,6 @@ export function DataScraper({
                   })()}
                 </div>
 
-                {/* Verification notifications */}
                 {uploadStatus.message && (
                   <div className="px-4 py-3 border border-emerald-500/20 bg-emerald-500/5 text-emerald-400 rounded-xl text-xs font-bold leading-relaxed flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -774,10 +950,186 @@ export function DataScraper({
           </motion.div>
         )}
 
-        {/* Method 2: Google Apps Script API Scraper */}
-        {activeSubTab === 'api-scraper' && (
+        {/* Method 2: Automated File Upload (Alokasi & Realisasi SIKD) */}
+        {activeSubTab === 'alokasi-realisasi' && (
           <motion.div
-            key="api-scraper"
+            key="alokasi-realisasi"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            className="space-y-8"
+          >
+            {/* Guide & Upload Area */}
+            <div className="bg-white/5 border border-white/10 rounded-3xl p-8 backdrop-blur-xl">
+              <div className="flex flex-col lg:flex-row gap-8">
+                
+                {/* Drag And Drop Column */}
+                <div className="flex-1 space-y-6">
+                  <div className="space-y-4">
+                    <div>
+                      <h2 className="text-xl font-black text-white tracking-tight flex items-center gap-2.5">
+                        <Upload className="w-5 h-5 text-indigo-400" />
+                        Unggah Berkas Alokasi & Realisasi SIKD
+                      </h2>
+                      <p className="text-slate-400 text-sm mt-1 font-sans">
+                        Unggah file Excel (.xlsx), CSV, atau JSON data alokasi rincian SIKD. Sistem memetakan kode akun, pagu, realisasi, dan rasio salur secara instan.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Drag drop slot */}
+                  <div 
+                    onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                    onDragLeave={() => setDragOver(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setDragOver(false);
+                      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                        const droppedFile = e.dataTransfer.files[0];
+                        const fakeEvent = { target: { files: [droppedFile] } } as any;
+                        handleFileChange(fakeEvent);
+                      }
+                    }}
+                    onClick={triggerClickInput}
+                    className={cn(
+                      "group border-2 border-dashed rounded-[2rem] p-10 flex flex-col items-center justify-center text-center cursor-pointer transition-all aspect-[21/9] min-h-[220px]",
+                      dragOver 
+                        ? "border-indigo-500 bg-indigo-500/10 scale-[1.01]" 
+                        : "border-white/10 hover:border-indigo-500/50 bg-black/10 hover:bg-white/[0.02]"
+                    )}
+                  >
+                    <input 
+                      type="file" 
+                      ref={fileInputRef}
+                      onChange={handleFileChange}
+                      accept=".xlsx,.xls,.csv,.json"
+                      className="hidden"
+                    />
+
+                    {processing ? (
+                      <div className="space-y-4">
+                        <Loader2 className="w-10 h-10 text-indigo-400 animate-spin mx-auto" />
+                        <div>
+                          <p className="text-white font-black text-sm">Sedang Menganalisis Skema Alokasi SIKD...</p>
+                          <p className="text-xs text-slate-500 mt-1">Mengurai rincian, pagu anggaran, serta persentase penyerapan dengan akurasi desimal maksimal...</p>
+                        </div>
+                      </div>
+                    ) : file ? (
+                      <div className="space-y-3">
+                        <div className="w-14 h-14 bg-emerald-500/20 border border-emerald-500/30 rounded-2xl flex items-center justify-center mx-auto transition-transform group-hover:scale-105">
+                          <FileSpreadsheet className="w-7 h-7 text-emerald-400" />
+                        </div>
+                        <div>
+                          <p className="text-white font-bold text-base max-w-sm px-4 truncate">{file.name}</p>
+                          <p className="text-xs text-slate-500 mt-1 font-mono">{(file.size / 1024).toFixed(1)} KB • {file.name.split('.').pop()?.toUpperCase()}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="w-14 h-14 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-center mx-auto group-hover:bg-indigo-600/20 group-hover:border-indigo-500/30 transition-all">
+                          <Upload className="w-6 h-6 text-slate-400 group-hover:text-indigo-400" />
+                        </div>
+                        <div>
+                          <p className="text-slate-200 font-bold text-sm">Tarik dan letakkan file Alokasi & Realisasi SIKD di sini atau <span className="text-indigo-400 hover:underline">Telusuri</span></p>
+                          <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">Mendukung format spreadsheet Excel (.xlsx, .xls), CSV, atau JSON</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Info and Restore Cards */}
+                <div className="w-full lg:w-96 bg-slate-900/50 border border-white/5 rounded-2xl p-6 relative flex flex-col justify-between">
+                  <div className="space-y-4">
+                    <h3 className="text-white font-bold flex items-center gap-2 text-xs uppercase tracking-wider">
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      Zero-Loss Decimal Precision
+                    </h3>
+                    <p className="text-xs text-slate-400 leading-relaxed font-sans">
+                      Semua nominal rupiah serta rasio penyerapan diurai menggunakan parser floating-point presisi tinggi tanpa pemotongan desimal, persis sesuai dengan rincian buku anggaran.
+                    </p>
+                  </div>
+
+                  <div className="pt-6 border-t border-white/5 mt-6">
+                    <button
+                      onClick={handleResetDataAlokasiRealisasi}
+                      className="w-full py-3 bg-red-600/10 hover:bg-red-600/20 border border-red-500/20 text-red-400 rounded-xl font-bold text-xs uppercase tracking-wider transition-all"
+                    >
+                      Restore ke Mock Data Alokasi
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            {/* Auto Analysis Result Deck */}
+            {extractedAlokasiRealisasi.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-slate-900 border border-white/10 rounded-3xl p-8 space-y-6 shadow-2xl"
+              >
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-3 h-3 bg-emerald-400 rounded-full animate-ping" />
+                      <h3 className="text-lg font-black text-white flex items-center gap-2">
+                        Analisis Alokasi Berhasil Diimpor!
+                      </h3>
+                    </div>
+                    <p className="text-xs text-slate-400 font-sans">
+                      Sistem luring sukses memetakan dan mengunggah {extractedAlokasiRealisasi.length} baris data anggaran alokasi ke buku SIKD.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={onNavigateToAllocation}
+                    className="w-full md:w-auto px-8 py-4 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-white font-black text-xs uppercase tracking-widest rounded-2xl shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2.5 active:scale-[0.98] transition-all"
+                  >
+                    Buka visualisasi alokasi & realisasi
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Upload Stat Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-mono">
+                  <div className="bg-white/5 border border-white/5 p-5 rounded-2xl">
+                    <span className="text-[10px] text-slate-400 font-extrabold uppercase block truncate">Total Pagu Diserap</span>
+                    <p className="font-black text-amber-400 mt-1.5 text-base sm:text-lg truncate">
+                      {formatCurrency(extractedStatsAlokasiRealisasi.totalPagu)}
+                    </p>
+                  </div>
+                  <div className="bg-white/5 border border-white/5 p-5 rounded-2xl">
+                    <span className="text-[10px] text-slate-400 font-extrabold uppercase block truncate">Total Realisasi Salur</span>
+                    <p className="font-black text-emerald-400 mt-1.5 text-base sm:text-lg truncate">
+                      {formatCurrency(extractedStatsAlokasiRealisasi.totalRealisasi)}
+                    </p>
+                  </div>
+                  <div className="bg-white/5 border border-white/5 p-5 rounded-2xl">
+                    <span className="text-[10px] text-slate-400 font-extrabold uppercase block truncate">Average Efisiensi Rasio</span>
+                    <p className="font-black text-sky-400 mt-1.5 text-base sm:text-lg truncate">
+                      {extractedStatsAlokasiRealisasi.avgRasio.toFixed(4)}%
+                    </p>
+                  </div>
+                </div>
+
+                {uploadStatus.message && (
+                  <div className="px-4 py-3 border border-emerald-500/20 bg-emerald-500/5 text-emerald-400 rounded-xl text-xs font-bold leading-relaxed flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>{uploadStatus.message}</span>
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+          </motion.div>
+        )}
+
+        {/* Method 3: Google Apps Script API DJPK Scraper */}
+        {activeSubTab === 'api-djpk' && (
+          <motion.div
+            key="api-djpk"
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -15 }}
@@ -788,32 +1140,31 @@ export function DataScraper({
               <motion.div 
                 initial={{ scale: 0.9, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
-                className="bg-indigo-600/10 border border-indigo-500/20 rounded-3xl p-6 backdrop-blur-xl"
+                className="bg-indigo-600/10 border border-indigo-500/20 rounded-3xl p-6 backdrop-blur-xl animate-in"
               >
                 <h3 className="text-indigo-400 font-bold mb-2 flex items-center gap-2">
-                  <AlertCircle className="w-5 h-5" />
+                  <AlertCircle className="w-4 h-4" />
                   Konfigurasi Diperlukan
                 </h3>
-                <p className="text-slate-400 text-sm mb-4">Paste URL Web App dari Google Apps Script Anda di sini untuk mengaktifkan fitur Scraper.</p>
+                <p className="text-slate-400 text-sm mb-4">Paste URL Web App dari Google Apps Script Anda di sidebar (Update Koneksi) untuk mengaktifkan scraper API DJPK.</p>
                 <input 
                   type="text"
                   placeholder="https://script.google.com/macros/s/.../exec"
-                  className="w-full px-4 py-3 bg-black/20 border border-white/10 rounded-xl text-white text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-mono"
+                  className="w-full px-4 py-3 bg-black/20 border border-white/10 rounded-xl text-white text-xs outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-mono"
                   readOnly
                   value={appsScriptUrl}
                 />
-                <p className="text-[10px] text-slate-500 mt-2 italic">*Koneksi dapat diatur melalui menu "Update Koneksi" di sidebar.</p>
               </motion.div>
             )}
 
             <div className="bg-white/5 border border-white/10 rounded-3xl p-8 backdrop-blur-xl">
               <div className="flex items-center gap-4 mb-8">
-                <div className="w-12 h-12 bg-emerald-600/20 rounded-2xl flex items-center justify-center border border-emerald-500/30">
-                  <CloudDownload className="w-6 h-6 text-emerald-400" />
+                <div className="w-12 h-12 bg-indigo-600/20 rounded-2xl flex items-center justify-center border border-indigo-500/30">
+                  <CloudDownload className="w-6 h-6 text-indigo-400" />
                 </div>
                 <div>
-                  <h1 className="text-2xl font-black text-white tracking-tight">Data Scraper DJPK</h1>
-                  <p className="text-slate-400 text-sm">Ambil realisasi APBD langsung dari Portal DJPK Kemenkeu.</p>
+                  <h1 className="text-2xl font-black text-white tracking-tight">Data Scraper API DJPK</h1>
+                  <p className="text-slate-400 text-sm">Ambil anggaran realisasi APBD langsung dari Portal DJPK Kemenkeu.</p>
                 </div>
               </div>
 
@@ -830,7 +1181,7 @@ export function DataScraper({
                         max="12"
                         value={periode}
                         onChange={(e) => setPeriode(e.target.value)}
-                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-mono"
                       />
                     </div>
                     <div>
@@ -840,7 +1191,7 @@ export function DataScraper({
                       <select
                         value={tahun}
                         onChange={(e) => setTahun(e.target.value)}
-                        className="w-full px-4 py-3 bg-slate-900 border border-white/10 rounded-xl text-white font-bold focus:ring-2 focus:ring-emerald-500 outline-none transition-all cursor-pointer"
+                        className="w-full px-4 py-3 bg-slate-900 border border-white/10 rounded-xl text-white font-bold focus:ring-2 focus:ring-indigo-500 outline-none transition-all cursor-pointer text-sm"
                       >
                         <option value="2026">2026</option>
                         <option value="2025">2025</option>
@@ -850,22 +1201,22 @@ export function DataScraper({
                     </div>
                   </div>
 
-                  <div className="px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-slate-400 text-sm flex items-center justify-between font-bold">
-                    <span>Bulan: {MONTHS[parseInt(periode) - 1] || 'Semua'}</span>
+                  <div className="px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-slate-400 text-xs flex items-center justify-between font-bold">
+                    <span>Bulan Target: {MONTHS[parseInt(periode) - 1] || 'Semua'}</span>
                     <span>Tahun Anggaran: {tahun}</span>
                   </div>
 
                   <div className="flex flex-col gap-4">
-                    {/* Langkah 1: Tarik Data Portal DJPK */}
+                    {/* Langkah 1 */}
                     <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-3">
                       <div className="flex items-center gap-2">
-                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-black">
+                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-indigo-500/10 text-indigo-400 text-xs font-black">
                           1
                         </span>
                         <h4 className="text-white font-bold text-xs uppercase tracking-wider">Langkah 1: Ambil Data</h4>
                       </div>
-                      <p className="text-[11px] text-slate-400 leading-relaxed">
-                        Mengunduh realisasi APBD langsung dari Portal DJPK Kemenkeu dan menyimpannya ke sheet <strong>Raw_Data</strong>.
+                      <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
+                        Mengunduh realisasi APBD KSB langsung dari Portal DJPK Kemenkeu dan menyimpannya ke sheet <strong>Raw_Data</strong>.
                       </p>
                       <button
                         onClick={handleScrape}
@@ -874,7 +1225,7 @@ export function DataScraper({
                           "w-full flex items-center justify-center gap-3 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all",
                           scrapeLoading || !appsScriptUrl
                             ? "bg-slate-800/80 text-slate-500 cursor-not-allowed border border-white/5" 
-                            : "bg-emerald-600 text-white hover:bg-emerald-500 shadow-lg shadow-emerald-500/20 active:scale-[0.98]"
+                            : "bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-500/20 active:scale-[0.98]"
                         )}
                       >
                         {scrapeLoading ? (
@@ -891,16 +1242,16 @@ export function DataScraper({
                       </button>
                     </div>
 
-                    {/* Langkah 2: Sinkronisasikan ke Google Sheet & Dashboard */}
+                    {/* Langkah 2 */}
                     <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-3">
                       <div className="flex items-center gap-2">
-                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-indigo-500/10 text-indigo-400 text-xs font-black">
+                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-black">
                           2
                         </span>
                         <h4 className="text-white font-bold text-xs uppercase tracking-wider">Langkah 2: Sinkronisasikan</h4>
                       </div>
-                      <p className="text-[11px] text-slate-400 leading-relaxed">
-                        Mentransfer data dari tab <strong>Raw_Data</strong> ke formulir utama Google Sheet dan otomatis memperbarui tampilan dashboard ini.
+                      <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
+                        Mentransfer data dari tab <strong>Raw_Data</strong> ke template utama Google Sheet dan memperbarui visualisasi dashboard.
                       </p>
                       <button
                         onClick={handleSyncScraper}
@@ -909,7 +1260,7 @@ export function DataScraper({
                           "w-full flex items-center justify-center gap-3 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all border",
                           scrapeLoading || !appsScriptUrl
                             ? "border-white/5 text-slate-600 cursor-not-allowed"
-                            : "border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/5 active:scale-[0.98]"
+                            : "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/5 active:scale-[0.98]"
                         )}
                       >
                         {scrapeLoading ? (
@@ -926,31 +1277,31 @@ export function DataScraper({
                       </button>
                     </div>
 
-                    {/* Progress steps ketika sinkronisasi sedang berjalan */}
+                    {/* Active Steppers */}
                     {scrapeLoading && autoStep && (
-                      <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl">
-                        <div className="flex items-center gap-2.5 text-emerald-400 font-bold text-xs">
+                      <div className="p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl animate-pulse">
+                        <div className="flex items-center gap-2.5 text-indigo-400 font-bold text-xs font-sans">
                           <Loader2 className="w-4 h-4 animate-spin shrink-0" />
                           <span>{autoStep}</span>
                         </div>
                       </div>
                     )}
 
-                    {/* Opsi Opsional */}
+                    {/* Auto Sync Panel */}
                     <div className="pt-2 border-t border-white/5 space-y-2.5">
                       <button
                         onClick={handleFullAutomaticScrapeAndSync}
                         disabled={scrapeLoading || !appsScriptUrl}
-                        className="w-full text-emerald-400 hover:text-emerald-300 font-bold text-[11px] flex items-center justify-center gap-1.5 py-2.5 hover:bg-emerald-500/5 rounded-xl transition-all border border-dashed border-emerald-500/20 disabled:opacity-50"
+                        className="w-full text-indigo-400 hover:text-indigo-300 font-bold text-[11px] flex items-center justify-center gap-1.5 py-2.5 hover:bg-indigo-500/5 rounded-xl transition-all border border-dashed border-indigo-500/20 disabled:opacity-50"
                       >
-                        <Zap className="w-3.5 h-3.5 text-amber-400" />
+                        <Zap className="w-3.5 h-3.5 text-amber-500" />
                         Alternatif: Jalankan Sinkronisasi Otomatis 1-Klik
                       </button>
 
                       <button
                         onClick={handleSyncAPBD}
                         disabled={loading || !appsScriptUrl}
-                        className="w-full text-indigo-400 hover:text-indigo-300 font-bold text-[11px] flex items-center justify-center gap-1.5 py-2 hover:bg-indigo-500/5 rounded-xl transition-all border border-dashed border-indigo-500/20 disabled:opacity-50"
+                        className="w-full text-emerald-400 hover:text-emerald-300 font-bold text-[11px] flex items-center justify-center gap-1.5 py-2 hover:bg-emerald-500/5 rounded-xl transition-all border border-dashed border-emerald-500/20 disabled:opacity-50"
                       >
                         <RefreshCw className={cn("w-3 h-3", loading && "animate-spin")} />
                         Hanya Segarkan Tampilan (Ambil data saat ini dari Sheet)
@@ -959,23 +1310,23 @@ export function DataScraper({
                   </div>
                 </div>
 
-                <div className="bg-slate-900/50 border border-white/5 rounded-2xl p-6 relative overflow-hidden">
+                <div className="bg-slate-900/50 border border-white/5 rounded-2xl p-6 h-fit relative overflow-hidden font-sans">
                   <h3 className="text-white font-bold mb-4 flex items-center gap-2 text-sm uppercase tracking-wider">
-                    <Info className="w-4 h-4 text-emerald-400" />
-                    Bagaimana Scraper Bekerja?
+                    <Info className="w-4 h-4 text-indigo-400" />
+                    Mekanisme Scraper DJPK
                   </h3>
                   <ul className="space-y-4 text-xs text-slate-400">
                     <li className="flex gap-2">
-                      <span className="text-emerald-400 font-extrabold">•</span>
-                      <span>Memicu Apps Script untuk melakukan HTTP Request ke Portal DJPK Kemenkeu secara luring.</span>
+                      <span className="text-indigo-400 font-extrabold">•</span>
+                      <span>Menginstruksikan modul Apps Script untuk mengunduh HTML rincian realisasi APBD Sumbawa Barat langsung dari server DJPK.</span>
                     </li>
                     <li className="flex gap-2">
-                      <span className="text-emerald-400 font-extrabold">•</span>
-                      <span>Mengurai HTML menggunakan regular expression yang kuat untuk menarik tabel APBD Sumbawa Barat.</span>
+                      <span className="text-indigo-400 font-extrabold">•</span>
+                      <span>Menerapkan ekspresi reguler regex untuk memecah baris data tabel realisasi anggaran secara luring secara asinkron.</span>
                     </li>
                     <li className="flex gap-2">
-                      <span className="text-emerald-400 font-extrabold">•</span>
-                      <span>Menyisipkan data ke lembar <strong>Raw_Data</strong> sebelum diverifikasi untuk sinkronisasi ke tab utama.</span>
+                      <span className="text-indigo-400 font-extrabold">•</span>
+                      <span>Tampilan diperbarui secara instan begitu sinkronisasi data divalidasi sukses.</span>
                     </li>
                   </ul>
                 </div>
@@ -983,14 +1334,14 @@ export function DataScraper({
 
               {scrapeStatus.type !== 'idle' && (
                 <div className={cn(
-                  "p-5 rounded-2xl border text-sm font-bold flex flex-col gap-4 mt-8",
+                  "p-5 rounded-2xl border text-sm font-bold flex flex-col gap-4 mt-8 font-sans",
                   scrapeStatus.type === 'success' ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-rose-500/10 border-rose-500/20 text-rose-400"
                 )}>
                   <div className="flex items-start gap-3">
                     {scrapeStatus.type === 'success' ? (
-                      <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" />
+                      <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5 text-emerald-400" />
                     ) : (
-                      <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                      <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-rose-400" />
                     )}
                     <span className="leading-relaxed">{scrapeStatus.message}</span>
                   </div>

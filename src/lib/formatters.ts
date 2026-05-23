@@ -43,20 +43,30 @@ export const safeParseNumber = (val: any): number => {
   } else if (str.includes(',')) {
     // Has commas but no dots
     const parts = str.split(',');
-    if (parts.length === 2 && parts[1].length < 3) {
-      str = str.replace(',', '.');
+    if (parts.length === 2) {
+      // If the integer part has more than 3 digits, the comma MUST be a decimal point (e.g. "125000,50")
+      if (parts[0].length > 3) {
+        str = str.replace(',', '.');
+      } else if (parts[1].length < 3) {
+        str = str.replace(',', '.');
+      } else {
+        str = str.replace(/,/g, '');
+      }
     } else {
       str = str.replace(/,/g, '');
     }
   } else if (str.includes('.')) {
     // Has dots but no commas.
     const parts = str.split('.');
-    // If there is only ONE dot, treat it as thousands separator if the part after it is exactly 3 digits
-    if (parts.length > 2) {
+    if (parts.length === 2) {
+      if (parts[0].length > 3) {
+        // Keep dot as decimal separator (e.g., "125000.50" or "62500000000.500")
+      } else if (parts[1].length === 3) {
+        // Single dot followed by exactly 3 digits, e.g. "159.000" -> thousands separator
+        str = str.replace(/\./g, '');
+      }
+    } else if (parts.length > 2) {
       // Multiple dots, e.g. "1.084.270.000" -> thousands separator
-      str = str.replace(/\./g, '');
-    } else if (parts.length === 2 && parts[1].length === 3) {
-      // Single dot followed by exactly 3 digits, e.g. "159.000" or "8.100" -> thousands separator
       str = str.replace(/\./g, '');
     }
   }
