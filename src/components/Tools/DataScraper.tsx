@@ -1318,15 +1318,15 @@ export function DataScraper({
                   <ul className="space-y-4 text-xs text-slate-400">
                     <li className="flex gap-2">
                       <span className="text-indigo-400 font-extrabold">•</span>
-                      <span>Menginstruksikan modul Apps Script untuk mengunduh HTML rincian realisasi APBD Sumbawa Barat langsung dari server DJPK.</span>
+                      <span>Menginstruksikan modul Apps Script untuk mengunduh file spreadsheet XML presisi tinggi langsung dari server DJPK.</span>
                     </li>
                     <li className="flex gap-2">
                       <span className="text-indigo-400 font-extrabold">•</span>
-                      <span>Menerapkan ekspresi reguler regex untuk memecah baris data tabel realisasi anggaran secara luring secara asinkron.</span>
+                      <span>Mengekstrak data anggaran, realisasi, dan persentase yang akurat sampai nominal satuan rupiah (tanpa pembulatan dan singkatan).</span>
                     </li>
                     <li className="flex gap-2">
                       <span className="text-indigo-400 font-extrabold">•</span>
-                      <span>Tampilan diperbarui secara instan begitu sinkronisasi data divalidasi sukses.</span>
+                      <span>Menuliskan data akurat tersebut ke tab <strong>Raw_Data</strong> secara langsung dan menyinkronkannya dengan dashboard secara mulus.</span>
                     </li>
                   </ul>
                 </div>
