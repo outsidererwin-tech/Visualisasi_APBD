@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
-import { APBDData, SikdRecord, SikdAllocationRecord } from '../types';
+import { APBDData, SikdRecord, SikdAllocationRecord, SipdRealizationRecord } from '../types';
 import { APBDService } from '../services/apbdService';
 import { MOCK_DATA } from '../mockData';
 import { MOCK_SIKD_DATA } from '../mockSikdData';
 import { MOCK_SIKD_ALLOCATION_DATA } from '../mockSikdAllocationData';
+import { MOCK_SIPD_REALIZATION_DATA } from '../mockSipdRealizationData';
 import { APBD_COLORS, MONTHS } from '../lib/constants';
 
 export function useAPBDData() {
@@ -41,6 +42,18 @@ export function useAPBDData() {
       }
     }
     return MOCK_SIKD_ALLOCATION_DATA;
+  });
+
+  const [sipdRealizationData, setSipdRealizationData] = useState<SipdRealizationRecord[]>(() => {
+    const local = localStorage.getItem('sipd_realization_custom_data');
+    if (local) {
+      try {
+        return JSON.parse(local);
+      } catch (e) {
+        return MOCK_SIPD_REALIZATION_DATA;
+      }
+    }
+    return MOCK_SIPD_REALIZATION_DATA;
   });
 
   const [loading, setLoading] = useState(false);
@@ -110,6 +123,11 @@ export function useAPBDData() {
     localStorage.setItem('sikd_allocation_custom_data', JSON.stringify(newData));
   };
 
+  const importNewSipdRealizationData = (newData: SipdRealizationRecord[]) => {
+    setSipdRealizationData(newData);
+    localStorage.setItem('sipd_realization_custom_data', JSON.stringify(newData));
+  };
+
   const resetToMockData = () => {
     setData(MOCK_DATA);
     localStorage.removeItem('apbd_custom_data');
@@ -123,6 +141,11 @@ export function useAPBDData() {
   const resetSikdAllocationToMockData = () => {
     setSikdAllocationData(MOCK_SIKD_ALLOCATION_DATA);
     localStorage.removeItem('sikd_allocation_custom_data');
+  };
+
+  const resetSipdRealizationToMockData = () => {
+    setSipdRealizationData(MOCK_SIPD_REALIZATION_DATA);
+    localStorage.removeItem('sipd_realization_custom_data');
   };
 
   const getMonthIndex = (month: string) => {
@@ -259,6 +282,7 @@ export function useAPBDData() {
     data,
     sikdData,
     sikdAllocationData,
+    sipdRealizationData,
     loading,
     error,
     appsScriptUrl,
@@ -277,8 +301,10 @@ export function useAPBDData() {
     importNewData,
     importNewSikdData,
     importNewSikdAllocationData,
+    importNewSipdRealizationData,
     resetToMockData,
     resetSikdToMockData,
-    resetSikdAllocationToMockData
+    resetSikdAllocationToMockData,
+    resetSipdRealizationToMockData
   };
 }

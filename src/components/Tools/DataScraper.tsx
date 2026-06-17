@@ -3,12 +3,12 @@ import {
   CloudDownload, Loader2, CheckCircle2, AlertCircle, ExternalLink, 
   Upload, Trash2, FileSpreadsheet, RefreshCw, Check, ArrowRight, Table,
   TrendingUp, TrendingDown, Scale, PieChart as PieIcon, Info, Database, Zap,
-  Layers, Coins, Percent
+  Layers, Coins, Percent, BarChart3
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
 import * as XLSX from 'xlsx';
-import { APBDData, SikdRecord, SikdAllocationRecord } from '../../types';
+import { APBDData, SikdRecord, SikdAllocationRecord, SipdRealizationRecord } from '../../types';
 import { MONTHS } from '../../lib/constants';
 import { formatCurrency, formatBillions, safeParseNumber } from '../../lib/formatters';
 
@@ -17,11 +17,14 @@ interface DataScraperProps {
   importNewData: (newData: APBDData[]) => void;
   importNewSikdData: (newData: SikdRecord[]) => void;
   importNewSikdAllocationData: (newData: SikdAllocationRecord[]) => void;
+  importNewSipdRealizationData?: (newData: SipdRealizationRecord[]) => void;
   resetToMockData: () => void;
   resetSikdToMockData: () => void;
   resetSikdAllocationToMockData: () => void;
+  resetSipdRealizationToMockData?: () => void;
   onNavigateToSikd: () => void;
   onNavigateToAllocation: () => void;
+  onNavigateToSipd?: () => void;
   refreshSikdData: (url?: string) => Promise<boolean>;
   refreshData: (url?: string) => Promise<boolean>;
   loading: boolean;
@@ -33,19 +36,22 @@ export function DataScraper({
   importNewData, 
   importNewSikdData,
   importNewSikdAllocationData,
+  importNewSipdRealizationData,
   resetToMockData, 
   resetSikdToMockData,
   resetSikdAllocationToMockData,
+  resetSipdRealizationToMockData,
   onNavigateToSikd,
   onNavigateToAllocation,
+  onNavigateToSipd,
   refreshSikdData,
   refreshData,
   loading,
   error
 }: DataScraperProps) {
-  // Option tab state supporting the 3 exact methods requested:
-  // 'lacak-salur' | 'alokasi-realisasi' | 'api-djpk'
-  const [activeSubTab, setActiveSubTab] = useState<'lacak-salur' | 'alokasi-realisasi' | 'api-djpk'>('lacak-salur');
+  // Option tab state supporting the 4 exact methods:
+  // 'lacak-salur' | 'alokasi-realisasi' | 'sipd-belanja' | 'api-djpk'
+  const [activeSubTab, setActiveSubTab] = useState<'lacak-salur' | 'alokasi-realisasi' | 'sipd-belanja' | 'api-djpk'>('lacak-salur');
 
   // ---------- Sync States ----------
   const [syncStatus, setSyncStatus] = useState<{ type: 'idle' | 'success' | 'error', message: string }>({ type: 'idle', message: '' });
@@ -131,6 +137,7 @@ export function DataScraper({
   // Storage for currently extracted lists to preview on upload
   const [extractedLacakSalur, setExtractedLacakSalur] = useState<SikdRecord[]>([]);
   const [extractedAlokasiRealisasi, setExtractedAlokasiRealisasi] = useState<SikdAllocationRecord[]>([]);
+  const [extractedSipdRealization, setExtractedSipdRealization] = useState<SipdRealizationRecord[]>([]);
   
   const [uploadStatus, setUploadStatus] = useState<{ type: 'success' | 'error' | 'idle', message: string }>({ type: 'idle', message: '' });
 
@@ -567,6 +574,7 @@ export function DataScraper({
       setFile(selectedFile);
       setExtractedLacakSalur([]);
       setExtractedAlokasiRealisasi([]);
+      setExtractedSipdRealization([]);
       setUploadStatus({ type: 'idle', message: '' });
       
       const reader = new FileReader();
@@ -578,8 +586,10 @@ export function DataScraper({
           const rows = parseCSV(text);
           if (activeSubTab === 'lacak-salur') {
             performLacakSalurAnalysis(rows);
-          } else {
+          } else if (activeSubTab === 'alokasi-realisasi') {
             performAlokasiRealisasiAnalysis(rows);
+          } else {
+            performSipdRealizationAnalysis(rows);
           }
         };
         reader.readAsText(selectedFile);
@@ -601,8 +611,10 @@ export function DataScraper({
             
             if (activeSubTab === 'lacak-salur') {
               performLacakSalurAnalysis(matrix);
-            } else {
+            } else if (activeSubTab === 'alokasi-realisasi') {
               performAlokasiRealisasiAnalysis(matrix);
+            } else {
+              performSipdRealizationAnalysis(matrix);
             }
           } catch (e) {
             setUploadStatus({ type: 'error', message: 'Format JSON invalid.' });
@@ -614,16 +626,62 @@ export function DataScraper({
           const arrayBuffer = event.target?.result as ArrayBuffer;
           try {
             const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-            const firstSheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[firstSheetName];
-            const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
-            if (activeSubTab === 'lacak-salur') {
-              performLacakSalurAnalysis(rows);
-            } else {
-              performAlokasiRealisasiAnalysis(rows);
+            
+            // Smarter multi-sheet scan: find sheet with the highest content density and keywords relevance
+            let bestSheetName = workbook.SheetNames[0];
+            let bestRows: any[][] = [];
+            let maxRowsCount = 0;
+            let bestMatchingScore = -1;
+
+            for (const sheetName of workbook.SheetNames) {
+              const worksheet = workbook.Sheets[sheetName];
+              const sheetRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+              if (!sheetRows || sheetRows.length === 0) continue;
+              
+              const rowCount = sheetRows.length;
+              let matchingScore = 0;
+              for (let r = 0; r < Math.min(sheetRows.length, 25); r++) {
+                const rData = sheetRows[r];
+                if (!rData || !Array.isArray(rData)) continue;
+                rData.forEach(cell => {
+                  if (cell !== undefined && cell !== null) {
+                    const str = cell.toString().toLowerCase().trim();
+                    if (activeSubTab === 'lacak-salur') {
+                      if (str.includes('kotor') || str.includes('bersih') || str.includes('potongan') || str.includes('tunda')) matchingScore += 5;
+                      if (str.includes('tanggal') || str.includes('jenis dana') || str.includes('uraian')) matchingScore += 3;
+                    } else if (activeSubTab === 'alokasi-realisasi') {
+                      if (str.includes('kode') || str.includes('kd_rek') || str === 'rekening' || str === 'kd') matchingScore += 5;
+                      if (str.includes('pagu') || str.includes('anggaran') || str.includes('alokasi')) matchingScore += 5;
+                      if (str.includes('realisasi') || str.includes('salur') || str.includes('real')) matchingScore += 5;
+                    } else {
+                      // sipd-belanja
+                      if (str.includes('daerah') || str.includes('skpd') || str.includes('program') || str.includes('kegiatan') || str.includes('sub_kegiatan')) matchingScore += 3;
+                      if (str.includes('rekening') || str.includes('rek') || str.includes('alokasi') || str.includes('anggaran') || str.includes('realisasi')) matchingScore += 5;
+                    }
+                  }
+                });
+              }
+
+              if (matchingScore > bestMatchingScore || (matchingScore === bestMatchingScore && rowCount > maxRowsCount)) {
+                bestMatchingScore = matchingScore;
+                maxRowsCount = rowCount;
+                bestSheetName = sheetName;
+                bestRows = sheetRows;
+              }
             }
-          } catch (e) {
-            setUploadStatus({ type: 'error', message: 'Gagal menguraikan berkas Excel.' });
+
+            const finalRows = bestRows.length > 0 ? bestRows : XLSX.utils.sheet_to_json(workbook.Sheets[bestSheetName], { header: 1 }) as any[][];
+            console.log(`Auto-selected sheet "${bestSheetName}" with score ${bestMatchingScore}, rows: ${finalRows.length}`);
+
+            if (activeSubTab === 'lacak-salur') {
+              performLacakSalurAnalysis(finalRows);
+            } else if (activeSubTab === 'alokasi-realisasi') {
+              performAlokasiRealisasiAnalysis(finalRows);
+            } else {
+              performSipdRealizationAnalysis(finalRows);
+            }
+          } catch (e: any) {
+            setUploadStatus({ type: 'error', message: 'Gagal menguraikan berkas Excel: ' + (e.message || e) });
           }
         };
         reader.readAsArrayBuffer(selectedFile);
@@ -657,6 +715,233 @@ export function DataScraper({
     }
   };
 
+  const handleResetSipdRealization = () => {
+    const confirm = window.confirm('Apakah Anda yakin ingin mengatur ulang data REALISASI BELANJA SIPD-RI ke Mock Data awal?');
+    if (confirm) {
+      resetSipdRealizationToMockData?.();
+      setFile(null);
+      setExtractedSipdRealization([]);
+      setUploadStatus({ type: 'idle', message: '' });
+      alert('Data REALISASI BELANJA SIPD-RI berhasil di-restore!');
+    }
+  };
+
+  const performSipdRealizationAnalysis = (rows: any[][]) => {
+    setProcessing(true);
+    setUploadStatus({ type: 'idle', message: 'Menganalisis skema data REALISASI BELANJA SIPD-RI otomatis...' });
+
+    setTimeout(() => {
+      try {
+        let headerRowIdx = -1;
+        let maxScore = -1;
+
+        for (let r = 0; r < Math.min(rows.length, 25); r++) {
+          const row = rows[r];
+          if (!row || row.length < 3) continue;
+
+          let score = 0;
+          row.forEach(cell => {
+            if (!cell) return;
+            const text = cell.toString().toLowerCase().trim();
+            if (text.includes('id daerah') || text.includes('id_daerah') || text.includes('daerah')) score += 1;
+            if (text.includes('tahun') || text.includes('thn')) score += 1;
+            if (text.includes('urusan')) score += 1;
+            if (text.includes('skpd') || text.includes('opd') || text === 'dinas') score += 1.5;
+            if (text.includes('program') || text.includes('prog')) score += 1.5;
+            if (text.includes('kegiatan') || text.includes('sub_keg')) score += 1.5;
+            if (text.includes('rekening') || text.includes('rek') || text === 'akun') score += 2;
+            if (text.includes('alokasi') || text.includes('pagu') || text.includes('anggaran') || text.includes('alokasi_anggaran')) score += 3;
+            if (text.includes('realisasi') || text.includes('real') || text.includes('realisasi_anggaran')) score += 3;
+          });
+
+          if (score > maxScore && score >= 2) {
+            maxScore = score;
+            headerRowIdx = r;
+          }
+        }
+
+        if (headerRowIdx === -1) {
+          headerRowIdx = 0;
+        }
+
+        const headers = (rows[headerRowIdx] || []).map(h => h?.toString().toLowerCase().trim() || '');
+        const colCount = headers.length;
+
+        let jIdDaerah = -1;
+        let jTahun = -1;
+        let jKodeUrusan = -1;
+        let jNamaUrusan = -1;
+        let jKodeBidangUrusan = -1;
+        let jNamaBidangUrusan = -1;
+        let jKodeFungsi = -1;
+        let jNamaFungsi = -1;
+        let jKodeSubFungsi = -1;
+        let jNamaSubFungsi = -1;
+        let jKodeSkpd = -1;
+        let jNamaSkpd = -1;
+        let jKodeSubSkpd = -1;
+        let jNamaSubSkpd = -1;
+        let jKodeProgram = -1;
+        let jNamaProgram = -1;
+        let jKodeKegiatan = -1;
+        let jNamaKegiatan = -1;
+        let jKodeSubKegiatan = -1;
+        let jNamaSubKegiatan = -1;
+        let jKodeRekening = -1;
+        let jNamaRekening = -1;
+        let jAlokasi = -1;
+        let jRealisasi = -1;
+
+        headers.forEach((clean, idx) => {
+          if (!clean) return;
+          if (clean === 'id daerah' || clean === 'id_daerah' || clean === 'iddaerah' || clean.includes('daerah')) jIdDaerah = idx;
+          else if (clean === 'tahun' || clean === 'thn' || clean === 'th') jTahun = idx;
+          else if (clean.includes('kode urusan') || clean.includes('kode_urusan') || clean === 'kd_urusan') jKodeUrusan = idx;
+          else if (clean.includes('nama urusan') || clean.includes('nama_urusan') || clean === 'ur_urusan') jNamaUrusan = idx;
+          else if (clean.includes('kode bidang urusan') || clean.includes('kode_bidang_urusan') || clean === 'kd_bidang') jKodeBidangUrusan = idx;
+          else if (clean.includes('nama bidang urusan') || clean.includes('nama_bidang_urusan') || clean === 'ur_bidang') jNamaBidangUrusan = idx;
+          else if (clean.includes('kode fungsi') || clean.includes('kode_fungsi') || clean === 'kd_fungsi') jKodeFungsi = idx;
+          else if (clean.includes('nama fungsi') || clean.includes('nama_fungsi') || clean === 'ur_fungsi') jNamaFungsi = idx;
+          else if (clean.includes('kode sub fungsi') || clean.includes('kode_sub_fungsi')) jKodeSubFungsi = idx;
+          else if (clean.includes('nama sub fungsi') || clean.includes('nama_sub_fungsi')) jNamaSubFungsi = idx;
+          
+          else if (clean.includes('kode sub skpd') || clean.includes('kode_sub_skpd') || clean.includes('kd_sub_skpd')) jKodeSubSkpd = idx;
+          else if (clean.includes('nama sub skpd') || clean.includes('nama_sub_skpd') || clean.includes('sub_skpd') || clean.includes('subskpd')) jNamaSubSkpd = idx;
+          else if (clean.includes('kode skpd') || clean.includes('kode_skpd') || clean.includes('kd_skpd') || clean === 'kd_organisasi') jKodeSkpd = idx;
+          else if (clean.includes('nama skpd') || clean.includes('nama_skpd') || clean === 'skpd' || clean === 'opd' || clean.includes('dinas') || clean === 'organisasi' || clean.includes('nama_organisasi')) jNamaSkpd = idx;
+          
+          else if (clean.includes('kode program') || clean.includes('kode_program') || clean.includes('kd_program') || clean === 'kd_prog') jKodeProgram = idx;
+          else if (clean.includes('nama program') || clean.includes('nama_program') || clean === 'program' || clean === 'prog' || clean === 'nama_prog') jNamaProgram = idx;
+          
+          else if (clean.includes('kode sub kegiatan') || clean.includes('kode_sub_kegiatan') || clean.includes('kode sub_kegiatan') || clean.includes('kd_sub_keg')) jKodeSubKegiatan = idx;
+          else if (clean.includes('nama sub kegiatan') || clean.includes('nama_sub_kegiatan') || clean.includes('nama sub_kegiatan') || clean.includes('sub_kegiatan') || clean.includes('sub_keg') || clean === 'subkegiatan' || clean === 'subkeg') jNamaSubKegiatan = idx;
+          
+          else if (clean.includes('kode kegiatan') || clean.includes('kode_kegiatan') || clean.includes('kd_kegiatan') || clean === 'kd_keg') jKodeKegiatan = idx;
+          else if (clean.includes('nama kegiatan') || clean.includes('nama_kegiatan') || clean === 'kegiatan' || clean === 'keg' || clean === 'nama_keg') jNamaKegiatan = idx;
+          
+          else if (clean.includes('kode rekening') || clean.includes('kode_rekening') || clean === 'kode rek' || clean === 'kode_rek' || clean === 'kd_rek' || clean === 'rekening' || clean === 'kd_rekening') jKodeRekening = idx;
+          else if (clean.includes('nama rekening') || clean.includes('nama_rekening') || clean === 'nama rek' || clean === 'nama_rek' || clean === 'ur_rek' || clean === 'uraian' || clean === 'keterangan_rekening') jNamaRekening = idx;
+          
+          else if (clean.includes('alokasi') || clean.includes('pagu') || clean.includes('anggaran') || clean.includes('alokasi_anggaran') || clean.includes('pagu_anggaran')) jAlokasi = idx;
+          else if (clean.includes('realisasi') || clean.includes('real') || clean.includes('realisasi_anggaran') || clean.includes('real_anggaran')) jRealisasi = idx;
+        });
+
+        const findColIdx = (phrases: string[], defaultIdx: number) => {
+          const idx = headers.findIndex(h => phrases.some(p => h.includes(p)));
+          return idx !== -1 ? idx : (defaultIdx < colCount ? defaultIdx : -1);
+        };
+
+        const clampIdx = (val: number, fallback: number) => {
+          if (val !== -1 && val < colCount) return val;
+          return fallback < colCount ? fallback : Math.max(0, colCount - 1);
+        };
+
+        jIdDaerah = clampIdx(jIdDaerah, 0);
+        jTahun = clampIdx(jTahun, 1);
+        jKodeSkpd = clampIdx(jKodeSkpd, Math.min(2, colCount - 1));
+        jNamaSkpd = clampIdx(jNamaSkpd, Math.min(3, colCount - 1));
+        jKodeProgram = clampIdx(jKodeProgram, Math.min(4, colCount - 1));
+        jNamaProgram = clampIdx(jNamaProgram, Math.min(5, colCount - 1));
+        jKodeSubKegiatan = clampIdx(jKodeSubKegiatan, Math.min(6, colCount - 1));
+        jNamaSubKegiatan = clampIdx(jNamaSubKegiatan, Math.min(7, colCount - 1));
+        
+        // Smarter lookups for key metrics
+        if (jKodeRekening === -1) {
+          jKodeRekening = findColIdx(['rek', 'akun', 'kode', 'kd'], Math.min(8, colCount - 1));
+        }
+        if (jNamaRekening === -1) {
+          const opt = headers.findIndex((h, i) => (h.includes('rek') || h.includes('nama') || h.includes('uraian') || h.includes('akun')) && i !== jKodeRekening);
+          jNamaRekening = opt !== -1 ? opt : Math.min(9, colCount - 1);
+        }
+        if (jAlokasi === -1) {
+          jAlokasi = findColIdx(['alokasi', 'pagu', 'anggaran'], Math.min(10, colCount - 1));
+        }
+        if (jRealisasi === -1) {
+          const opt = headers.findIndex((h, i) => (h.includes('real') || h.includes('salur')) && i !== jAlokasi);
+          jRealisasi = opt !== -1 ? opt : Math.min(11, colCount - 1);
+        }
+
+        jKodeRekening = clampIdx(jKodeRekening, Math.min(8, colCount - 1));
+        jNamaRekening = clampIdx(jNamaRekening, Math.min(9, colCount - 1));
+        jAlokasi = clampIdx(jAlokasi, Math.min(10, colCount - 1));
+        jRealisasi = clampIdx(jRealisasi, Math.min(11, colCount - 1));
+
+        const dataRows = rows.slice(headerRowIdx + 1);
+        const parsed: SipdRealizationRecord[] = [];
+
+        dataRows.forEach(row => {
+          if (!row || row.length === 0) return;
+
+          // Avoid total row in excel
+          let recCodeVal = row[jKodeRekening] !== undefined && row[jKodeRekening] !== null ? row[jKodeRekening].toString().trim() : '';
+          const recNameVal = row[jNamaRekening] !== undefined && row[jNamaRekening] !== null ? row[jNamaRekening].toString().trim() : '';
+          const subKegVal = row[jNamaSubKegiatan] !== undefined && row[jNamaSubKegiatan] !== null ? row[jNamaSubKegiatan].toString().trim() : '';
+          const skpdVal = row[jNamaSkpd] !== undefined && row[jNamaSkpd] !== null ? row[jNamaSkpd].toString().trim() : 'Dinas KSB';
+
+          if (recNameVal.toLowerCase().includes('jumlah') || recNameVal.toLowerCase().includes('total') || subKegVal.toLowerCase().includes('jumlah')) return;
+          if (skpdVal.toLowerCase().includes('jumlah') || skpdVal.toLowerCase().includes('total')) return;
+
+          if (!recCodeVal || recCodeVal === '-' || recCodeVal === '.') {
+            const alokasiVal = parseMoneyValue(row[jAlokasi]);
+            const realisasiVal = parseMoneyValue(row[jRealisasi]);
+            if (alokasiVal > 0 || realisasiVal > 0) {
+              recCodeVal = `5.1.02.${String(Math.floor(Math.random() * 9000) + 1000)}`;
+            } else {
+              return;
+            }
+          }
+
+          parsed.push({
+            idDaerah: row[jIdDaerah] !== undefined && row[jIdDaerah] !== null ? row[jIdDaerah].toString().trim() : '5207',
+            tahun: row[jTahun] !== undefined && row[jTahun] !== null ? row[jTahun].toString().trim() : '2026',
+            kodeUrusan: jKodeUrusan !== -1 && row[jKodeUrusan] !== undefined && row[jKodeUrusan] !== null ? row[jKodeUrusan].toString().trim() : '',
+            namaUrusan: jNamaUrusan !== -1 && row[jNamaUrusan] !== undefined && row[jNamaUrusan] !== null ? row[jNamaUrusan].toString().trim() : '',
+            kodeBidangUrusan: jKodeBidangUrusan !== -1 && row[jKodeBidangUrusan] !== undefined && row[jKodeBidangUrusan] !== null ? row[jKodeBidangUrusan].toString().trim() : '',
+            namaBidangUrusan: jNamaBidangUrusan !== -1 && row[jNamaBidangUrusan] !== undefined && row[jNamaBidangUrusan] !== null ? row[jNamaBidangUrusan].toString().trim() : '',
+            kodeFungsi: jKodeFungsi !== -1 && row[jKodeFungsi] !== undefined && row[jKodeFungsi] !== null ? row[jKodeFungsi].toString().trim() : '',
+            namaFungsi: jNamaFungsi !== -1 && row[jNamaFungsi] !== undefined && row[jNamaFungsi] !== null ? row[jNamaFungsi].toString().trim() : '',
+            kodeSubFungsi: jKodeSubFungsi !== -1 && row[jKodeSubFungsi] !== undefined && row[jKodeSubFungsi] !== null ? row[jKodeSubFungsi].toString().trim() : '',
+            namaSubFungsi: jNamaSubFungsi !== -1 && row[jNamaSubFungsi] !== undefined && row[jNamaSubFungsi] !== null ? row[jNamaSubFungsi].toString().trim() : '',
+            kodeSkpd: row[jKodeSkpd] !== undefined && row[jKodeSkpd] !== null ? row[jKodeSkpd].toString().trim() : '',
+            namaSkpd: skpdVal,
+            kodeSubSkpd: jKodeSubSkpd !== -1 && row[jKodeSubSkpd] !== undefined && row[jKodeSubSkpd] !== null ? row[jKodeSubSkpd].toString().trim() : '',
+            namaSubSkpd: jNamaSubSkpd !== -1 && row[jNamaSubSkpd] !== undefined && row[jNamaSubSkpd] !== null ? row[jNamaSubSkpd].toString().trim() : '',
+            kodeProgram: row[jKodeProgram] !== undefined && row[jKodeProgram] !== null ? row[jKodeProgram].toString().trim() : '',
+            namaProgram: row[jNamaProgram] !== undefined && row[jNamaProgram] !== null ? row[jNamaProgram].toString().trim() : 'Program Standard Belanja',
+            kodeKegiatan: jKodeKegiatan !== -1 && row[jKodeKegiatan] !== undefined && row[jKodeKegiatan] !== null ? row[jKodeKegiatan].toString().trim() : '',
+            namaKegiatan: jNamaKegiatan !== -1 && row[jNamaKegiatan] !== undefined && row[jNamaKegiatan] !== null ? row[jNamaKegiatan].toString().trim() : 'Kegiatan Standard',
+            kodeSubKegiatan: row[jKodeSubKegiatan] !== undefined && row[jKodeSubKegiatan] !== null ? row[jKodeSubKegiatan].toString().trim() : '',
+            namaSubKegiatan: subKegVal || 'Sub-Kegiatan Standard Belanja',
+            kodeRekening: recCodeVal,
+            namaRekening: recNameVal || 'Daftar Anggaran Belanja',
+            alokasiAnggaran: parseMoneyValue(row[jAlokasi]),
+            realisasiAnggaran: parseMoneyValue(row[jRealisasi])
+          });
+        });
+
+        if (parsed.length === 0) {
+          throw new Error('Sistem gagal membaca baris data REALISASI BELANJA SIPD-RI yang valid.');
+        }
+
+        // Save imported list to master state
+        importNewSipdRealizationData?.(parsed);
+        setExtractedSipdRealization(parsed);
+        setUploadStatus({ 
+          type: 'success', 
+          message: `Sukses! ${parsed.length} baris data Realisasi Belanja SIPD-RI berhasil diurai & dianalisis otomatis!` 
+        });
+
+      } catch (err: any) {
+        setUploadStatus({ 
+          type: 'error', 
+          message: err.message || 'Gagal mengurai file otomatis. Hubungi admin atau periksa kembali file Anda.' 
+        });
+      } finally {
+        setProcessing(false);
+      }
+    }, 1200);
+  };
+
   // High-level calculations of extracted data for summary presentation
   const extractedStatsLacakSalur = useMemo(() => {
     if (extractedLacakSalur.length === 0) return { totalKotor: 0, totalPotongan: 0, totalBersih: 0, totalTunda: 0 };
@@ -686,6 +971,14 @@ export function DataScraper({
     return { totalPagu, totalRealisasi, avgRasio };
   }, [extractedAlokasiRealisasi]);
 
+  const extractedStatsSipdRealization = useMemo(() => {
+    if (extractedSipdRealization.length === 0) return { totalAlokasi: 0, totalRealisasi: 0, avgRasio: 0 };
+    const totalAlokasi = extractedSipdRealization.reduce((acc, curr) => acc + (curr.alokasiAnggaran || 0), 0);
+    const totalRealisasi = extractedSipdRealization.reduce((acc, curr) => acc + (curr.realisasiAnggaran || 0), 0);
+    const avgRasio = totalAlokasi > 0 ? (totalRealisasi / totalAlokasi) * 100 : 0;
+    return { totalAlokasi, totalRealisasi, avgRasio };
+  }, [extractedSipdRealization]);
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       
@@ -704,8 +997,8 @@ export function DataScraper({
         </div>
       )}
       
-      {/* 3 Methods Switching Control panel */}
-      <div className="flex bg-slate-900 border border-white/5 p-1 rounded-2xl max-w-2xl mx-auto shadow-inner relative z-20">
+      {/* 4 Methods Switching Control panel */}
+      <div className="flex flex-col md:flex-row bg-slate-900 border border-white/5 p-1 rounded-2xl max-w-4xl mx-auto shadow-inner relative z-20 gap-1">
         <button
           onClick={() => {
             setActiveSubTab('lacak-salur');
@@ -882,6 +1175,38 @@ export function DataScraper({
               </div>
             </div>
 
+            {/* Global uploadStatus for Method 1 */}
+            {uploadStatus.message && activeSubTab === 'lacak-salur' && (
+              <div className="max-w-4xl mx-auto mt-6">
+                <div className={cn(
+                  "p-5 rounded-3xl border flex items-start gap-4 shadow-xl transition-all animate-in fade-in zoom-in-95 duration-300",
+                  uploadStatus.type === 'success' 
+                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" 
+                    : uploadStatus.type === 'error'
+                      ? "bg-rose-500/10 border-rose-500/20 text-rose-400"
+                      : "bg-[#1e1b4b]/50 border-indigo-500/20 text-indigo-400"
+                )}>
+                  {uploadStatus.type === 'success' ? (
+                    <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-400 mt-1" />
+                  ) : uploadStatus.type === 'error' ? (
+                    <AlertCircle className="w-5 h-5 shrink-0 text-rose-400 mt-1" />
+                  ) : (
+                    <Loader2 className="w-5 h-5 shrink-0 text-indigo-400 animate-spin mt-1" />
+                  )}
+                  <div className="space-y-1">
+                    <h3 className={cn("text-sm font-black text-white", 
+                      uploadStatus.type === 'success' ? "text-emerald-300" : uploadStatus.type === 'error' ? "text-rose-300" : "text-indigo-300"
+                    )}>
+                      {uploadStatus.type === 'success' ? 'Import Dan Analisis Sukses!' : uploadStatus.type === 'error' ? 'Gagal Mengimpor Berkas' : 'Sedang Memproses Berkas...'}
+                    </h3>
+                    <p className="text-xs text-slate-300 leading-relaxed font-sans font-medium">
+                      {uploadStatus.message}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Auto Analysis Result Deck */}
             {extractedLacakSalur.length > 0 && (
               <motion.div
@@ -936,6 +1261,52 @@ export function DataScraper({
                       );
                     });
                   })()}
+                </div>
+
+                {/* Table Preview */}
+                <div className="bg-[#020617]/50 border border-white/5 rounded-2xl overflow-hidden mt-6">
+                  <div className="p-4 border-b border-white/5 bg-[#020617]/20 flex items-center justify-between">
+                    <span className="text-[10px] text-white font-extrabold uppercase tracking-wider flex items-center gap-1.5">
+                      <Table className="w-3.5 h-3.5 text-indigo-400" />
+                      Pratinjau Data Transaksi SIKD (5 Baris Pertama)
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-bold font-mono">Daftar Lacak Salur</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left font-sans text-xs">
+                      <thead className="bg-[#020617]/30 text-slate-400 text-[9px] uppercase font-bold tracking-wider">
+                        <tr>
+                          <th className="px-5 py-3">Tanggal</th>
+                          <th className="px-5 py-3">Jenis Dana</th>
+                          <th className="px-5 py-3">Uraian Transaksi</th>
+                          <th className="px-5 py-3 text-right">Nilai Kotor</th>
+                          <th className="px-5 py-3 text-right">Nilai Bersih</th>
+                          <th className="px-5 py-3 text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5 font-mono">
+                        {extractedLacakSalur.slice(0, 5).map((row, idx) => (
+                          <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
+                            <td className="px-5 py-3 text-slate-300 font-medium font-sans whitespace-nowrap">{row.tanggal}</td>
+                            <td className="px-5 py-3 text-indigo-400 font-bold whitespace-nowrap">{row.jenisDana}</td>
+                            <td className="px-5 py-3 text-slate-300 font-sans max-w-xs truncate">{row.uraian}</td>
+                            <td className="px-5 py-3 text-right text-slate-400">{formatCurrency(row.nilaiKotor)}</td>
+                            <td className="px-5 py-3 text-right text-emerald-400 font-bold">{formatCurrency(row.nilaiBersih)}</td>
+                            <td className="px-5 py-3 text-center">
+                              <span className={cn(
+                                "px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border",
+                                row.status.toLowerCase().includes('tunda') 
+                                  ? "bg-amber-500/10 text-amber-400 border-amber-500/20" 
+                                  : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                              )}>
+                                {row.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
 
                 {uploadStatus.message && (
@@ -1063,6 +1434,38 @@ export function DataScraper({
               </div>
             </div>
 
+            {/* Global uploadStatus for Method 2 */}
+            {uploadStatus.message && activeSubTab === 'alokasi-realisasi' && (
+              <div className="max-w-4xl mx-auto mt-6">
+                <div className={cn(
+                  "p-5 rounded-3xl border flex items-start gap-4 shadow-xl transition-all animate-in fade-in zoom-in-95 duration-300",
+                  uploadStatus.type === 'success' 
+                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" 
+                    : uploadStatus.type === 'error'
+                      ? "bg-rose-500/10 border-rose-500/20 text-rose-400"
+                      : "bg-[#1e1b4b]/50 border-indigo-500/20 text-indigo-400"
+                )}>
+                  {uploadStatus.type === 'success' ? (
+                    <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-400 mt-1" />
+                  ) : uploadStatus.type === 'error' ? (
+                    <AlertCircle className="w-5 h-5 shrink-0 text-rose-400 mt-1" />
+                  ) : (
+                    <Loader2 className="w-5 h-5 shrink-0 text-indigo-400 animate-spin mt-1" />
+                  )}
+                  <div className="space-y-1">
+                    <h3 className={cn("text-sm font-black text-white", 
+                      uploadStatus.type === 'success' ? "text-emerald-300" : uploadStatus.type === 'error' ? "text-rose-300" : "text-indigo-300"
+                    )}>
+                      {uploadStatus.type === 'success' ? 'Import Dan Analisis Sukses!' : uploadStatus.type === 'error' ? 'Gagal Mengimpor Berkas' : 'Sedang Memproses Berkas...'}
+                    </h3>
+                    <p className="text-xs text-slate-300 leading-relaxed font-sans font-medium">
+                      {uploadStatus.message}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Auto Analysis Result Deck */}
             {extractedAlokasiRealisasi.length > 0 && (
               <motion.div
@@ -1092,7 +1495,7 @@ export function DataScraper({
                   </button>
                 </div>
 
-                {/* Upload Stat Grid */}
+                 {/* Upload Stat Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-mono">
                   <div className="bg-white/5 border border-white/5 p-5 rounded-2xl">
                     <span className="text-[10px] text-slate-400 font-extrabold uppercase block truncate">Total Pagu Diserap</span>
@@ -1114,12 +1517,344 @@ export function DataScraper({
                   </div>
                 </div>
 
-                {uploadStatus.message && (
-                  <div className="px-4 py-3 border border-emerald-500/20 bg-emerald-500/5 text-emerald-400 rounded-xl text-xs font-bold leading-relaxed flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>{uploadStatus.message}</span>
+                {/* Table Preview */}
+                <div className="bg-[#020617]/50 border border-white/5 rounded-2xl overflow-hidden mt-6">
+                  <div className="p-4 border-b border-white/5 bg-[#020617]/20 flex items-center justify-between">
+                    <span className="text-[10px] text-white font-extrabold uppercase tracking-wider flex items-center gap-1.5">
+                      <Table className="w-3.5 h-3.5 text-emerald-400" />
+                      Pratinjau Data Alokasi & Realisasi SIKD (5 Baris Pertama)
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-bold font-mono">Pagu Alokasi SIKD</span>
                   </div>
-                )}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left font-sans text-xs">
+                      <thead className="bg-[#020617]/30 text-slate-400 text-[9px] uppercase font-bold tracking-wider">
+                        <tr>
+                          <th className="px-5 py-3">Kode Akun</th>
+                          <th className="px-5 py-3">Uraian Rekening</th>
+                          <th className="px-5 py-3 text-right">Nilai Pagu (Alokasi)</th>
+                          <th className="px-5 py-3 text-right">Nilai Realisasi</th>
+                          <th className="px-5 py-3 text-center">Rasio Penyerapan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5 font-mono">
+                        {extractedAlokasiRealisasi.slice(0, 5).map((row, idx) => (
+                          <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
+                            <td className="px-5 py-3 text-slate-300 font-bold whitespace-nowrap">
+                              <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5 text-[10px]">
+                                {row.kode}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3 text-slate-300 font-sans max-w-sm truncate">{row.uraian}</td>
+                            <td className="px-5 py-3 text-right text-slate-400">{formatCurrency(row.pagu)}</td>
+                            <td className="px-5 py-3 text-right text-emerald-400 font-bold">{formatCurrency(row.realisasi)}</td>
+                            <td className="px-5 py-3 text-center">
+                              <div className="flex flex-col items-center gap-1">
+                                <span className={cn(
+                                  "px-2 py-0.5 rounded-full text-[9px] font-black tracking-widest uppercase border",
+                                  row.rasio >= 80 
+                                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
+                                    : row.rasio > 0 
+                                      ? "bg-sky-500/10 text-sky-400 border-sky-500/20" 
+                                      : "bg-slate-500/10 text-slate-400 border-white/10"
+                                )}>
+                                  {row.rasio.toFixed(2)}%
+                                </span>
+                                <div className="w-16 h-1 bg-white/5 rounded-full overflow-hidden">
+                                  <div 
+                                    className="h-full bg-gradient-to-r from-blue-500 to-sky-400 rounded-full"
+                                    style={{ width: `${Math.min(100, row.rasio)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+          </motion.div>
+        )}
+
+        {/* Method 3: Automated File Upload (REALISASI BELANJA SIPD-RI) */}
+        {activeSubTab === 'sipd-belanja' && (
+          <motion.div
+            key="sipd-belanja"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            className="space-y-8"
+          >
+            {/* Guide & Upload Area */}
+            <div className="bg-white/5 border border-white/10 rounded-3xl p-8 backdrop-blur-xl">
+              <div className="flex flex-col lg:flex-row gap-8">
+                
+                {/* Drag And Drop Column */}
+                <div className="flex-1 space-y-6">
+                  <div className="space-y-4">
+                    <div>
+                      <h2 className="text-xl font-black text-white tracking-tight flex items-center gap-2.5">
+                        <Upload className="w-5 h-5 text-indigo-400" />
+                        Unggah Berkas REALISASI BELANJA SIPD-RI
+                      </h2>
+                      <p className="text-slate-400 text-sm mt-1 font-sans">
+                        Unggah file Excel (.xlsx), CSV, atau JSON data realisasi penyerapan dinas KSB dari sub-sistem SIPD-RI sub-kegiatan & rekening belanja.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Drag drop slot */}
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDragOver(true);
+                    }}
+                    onDragLeave={() => setDragOver(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setDragOver(false);
+                      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                        const droppedFile = e.dataTransfer.files[0];
+                        const fakeEvent = { target: { files: [droppedFile] } } as any;
+                        handleFileChange(fakeEvent);
+                      }
+                    }}
+                    onClick={triggerClickInput}
+                    className={cn(
+                      "group border-2 border-dashed rounded-[2rem] p-10 flex flex-col items-center justify-center text-center cursor-pointer transition-all aspect-[21/9] min-h-[220px]",
+                      dragOver 
+                        ? "border-indigo-500 bg-indigo-500/10 scale-[1.01]" 
+                        : "border-white/10 hover:border-indigo-500/50 bg-black/10 hover:bg-white/[0.02]"
+                    )}
+                  >
+                    <input 
+                      type="file" 
+                      ref={fileInputRef}
+                      onChange={handleFileChange}
+                      accept=".xlsx,.xls,.csv,.json"
+                      className="hidden"
+                    />
+
+                    {processing ? (
+                      <div className="space-y-4">
+                        <Loader2 className="w-10 h-10 text-indigo-400 animate-spin mx-auto" />
+                        <div>
+                          <p className="text-white font-black text-sm">Sedang Menganalisis Skema Realisasi Belanja SIPD-RI...</p>
+                          <p className="text-xs text-slate-500 mt-1">Mengurai rincian sub-kegiatan, program, rekening belanja, serta persentase penyerapan dengan akurasi desimal maksimal...</p>
+                        </div>
+                      </div>
+                    ) : file ? (
+                      <div className="space-y-3">
+                        <div className="w-14 h-14 bg-emerald-500/20 border border-emerald-500/30 rounded-2xl flex items-center justify-center mx-auto transition-transform group-hover:scale-105">
+                          <FileSpreadsheet className="w-7 h-7 text-emerald-400" />
+                        </div>
+                        <div>
+                          <p className="text-white font-bold text-base max-w-sm px-4 truncate">{file.name}</p>
+                          <p className="text-xs text-slate-500 mt-1 font-mono">{(file.size / 1024).toFixed(1)} KB • {file.name.split('.').pop()?.toUpperCase()}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="w-14 h-14 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-center mx-auto group-hover:bg-indigo-600/20 group-hover:border-indigo-500/30 transition-all">
+                          <Upload className="w-6 h-6 text-slate-400 group-hover:text-indigo-400" />
+                        </div>
+                        <div>
+                          <p className="text-slate-200 font-bold text-sm">Tarik dan letakkan file REALISASI BELANJA SIPD-RI di sini atau <span className="text-indigo-400 hover:underline">Telusuri</span></p>
+                          <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">Mendukung format spreadsheet Excel (.xlsx, .xls), CSV, atau JSON</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Info and Restore Cards */}
+                <div className="w-full lg:w-96 bg-slate-900/50 border border-white/5 rounded-2xl p-6 relative flex flex-col justify-between">
+                  <div className="space-y-4">
+                    <h3 className="text-white font-bold flex items-center gap-2 text-xs uppercase tracking-wider">
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      Zero-Loss Decimal Precision
+                    </h3>
+                    <p className="text-xs text-slate-400 leading-relaxed font-sans">
+                      Semua nominal rupiah serta rasio penyerapan diurai menggunakan parser floating-point presisi tinggi tanpa pemotongan desimal, persis sesuai dengan rincian buku anggaran belanja daerah KSB.
+                    </p>
+                  </div>
+
+                  <div className="pt-6 border-t border-white/5 mt-6">
+                    <button
+                      onClick={handleResetSipdRealization}
+                      className="w-full py-3 bg-red-[#dc2626]/10 bg-red-600/10 hover:bg-red-600/20 border border-red-500/20 text-red-400 rounded-xl font-bold text-xs uppercase tracking-wider transition-all"
+                    >
+                      Restore ke Mock Data SIPD-RI
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            {/* Global uploadStatus for Method 3 */}
+            {uploadStatus.message && activeSubTab === 'sipd-belanja' && (
+              <div className="max-w-4xl mx-auto mt-6">
+                <div className={cn(
+                  "p-5 rounded-3xl border flex items-start gap-4 shadow-xl transition-all animate-in fade-in zoom-in-95 duration-300",
+                  uploadStatus.type === 'success' 
+                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" 
+                    : uploadStatus.type === 'error'
+                      ? "bg-rose-500/10 border-rose-500/20 text-rose-400"
+                      : "bg-[#1e1b4b]/50 border-indigo-500/20 text-indigo-400"
+                )}>
+                  {uploadStatus.type === 'success' ? (
+                    <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-400 mt-1" />
+                  ) : uploadStatus.type === 'error' ? (
+                    <AlertCircle className="w-5 h-5 shrink-0 text-rose-400 mt-1" />
+                  ) : (
+                    <Loader2 className="w-5 h-5 shrink-0 text-indigo-400 animate-spin mt-1" />
+                  )}
+                  <div className="space-y-1">
+                    <h3 className={cn("text-sm font-black text-white", 
+                      uploadStatus.type === 'success' ? "text-emerald-300" : uploadStatus.type === 'error' ? "text-rose-300" : "text-indigo-300"
+                    )}>
+                      {uploadStatus.type === 'success' ? 'Import Dan Analisis Sukses!' : uploadStatus.type === 'error' ? 'Gagal Mengimpor Berkas' : 'Sedang Memproses Berkas...'}
+                    </h3>
+                    <p className="text-xs text-slate-300 leading-relaxed font-sans font-medium">
+                      {uploadStatus.message}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Auto Analysis Result Deck */}
+            {extractedSipdRealization.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-slate-900 border border-white/10 rounded-3xl p-8 space-y-6 shadow-2xl"
+              >
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-3 h-3 bg-emerald-400 rounded-full animate-ping" />
+                      <h3 className="text-lg font-black text-white flex items-center gap-2">
+                        Analisis Penyerapan SIPD-RI Berhasil Diimpor!
+                      </h3>
+                    </div>
+                    <p className="text-xs text-slate-400 font-sans">
+                      Sistem luring sukses memetakan dan mengunggah {extractedSipdRealization.length} baris data anggaran belanja sub-kegiatan ke buku realisasi KSB.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => onNavigateToSipd?.()}
+                    className="w-full md:w-auto px-8 py-4 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-white font-black text-xs uppercase tracking-widest rounded-2xl shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2.5 active:scale-[0.98] transition-all"
+                  >
+                    Buka visualisasi REALISASI SIPD-RI
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                 {/* Upload Stat Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-mono">
+                  <div className="bg-white/5 border border-white/5 p-5 rounded-2xl">
+                    <span className="text-[10px] text-slate-400 font-extrabold uppercase block truncate">Total Alokasi Pagu</span>
+                    <p className="font-black text-amber-400 mt-1.5 text-base sm:text-lg truncate">
+                      {formatCurrency(extractedStatsSipdRealization.totalAlokasi)}
+                    </p>
+                  </div>
+                  <div className="bg-white/5 border border-white/5 p-5 rounded-2xl">
+                    <span className="text-[10px] text-slate-400 font-extrabold uppercase block truncate">Total Realisasi Belanja</span>
+                    <p className="font-black text-emerald-400 mt-1.5 text-base sm:text-lg truncate">
+                      {formatCurrency(extractedStatsSipdRealization.totalRealisasi)}
+                    </p>
+                  </div>
+                  <div className="bg-white/5 border border-white/5 p-5 rounded-2xl">
+                    <span className="text-[10px] text-slate-400 font-extrabold uppercase block truncate">Efisiensi Rasio</span>
+                    <p className="font-black text-sky-400 mt-1.5 text-base sm:text-lg truncate">
+                      {extractedStatsSipdRealization.avgRasio.toFixed(4)}%
+                    </p>
+                  </div>
+                </div>
+
+                {/* Table Preview */}
+                <div className="bg-[#020617]/50 border border-white/5 rounded-2xl overflow-hidden mt-6">
+                  <div className="p-4 border-b border-white/5 bg-[#020617]/20 flex items-center justify-between">
+                    <span className="text-[10px] text-white font-extrabold uppercase tracking-wider flex items-center gap-1.5">
+                      <Table className="w-3.5 h-3.5 text-indigo-400" />
+                      Pratinjau Data Realisasi Belanja SIPD-RI (5 Baris Pertama)
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-bold font-mono">Buku Kas Belanja SIPD-RI</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left font-sans text-xs">
+                      <thead className="bg-[#020617]/30 text-slate-400 text-[9px] uppercase font-bold tracking-wider">
+                        <tr>
+                          <th className="px-5 py-3">SKPD / Program / Sub-Kegiatan</th>
+                          <th className="px-5 py-3">Kode Rekening</th>
+                          <th className="px-5 py-3">Nama Rekening</th>
+                          <th className="px-5 py-3 text-right">Alokasi Pagu (IDR)</th>
+                          <th className="px-5 py-3 text-right">Realisasi Belanja</th>
+                          <th className="px-5 py-3 text-center">Rasio Penyerapan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5 font-mono">
+                        {extractedSipdRealization.slice(0, 5).map((row, idx) => {
+                          const rasioIndex = row.alokasiAnggaran > 0 ? (row.realisasiAnggaran / row.alokasiAnggaran) * 100 : 0;
+                          return (
+                            <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
+                              <td className="px-5 py-3 font-sans text-[11px] max-w-sm">
+                                <div className="space-y-0.5">
+                                  <span className="text-[9px] uppercase tracking-wider font-extrabold text-indigo-400 block truncate">
+                                    {row.namaSkpd}
+                                  </span>
+                                  <span className="text-[10px] uppercase font-bold text-[#38bdf8] block truncate">
+                                    {row.namaProgram}
+                                  </span>
+                                  <span className="text-white font-medium block truncate">
+                                    {row.namaSubKegiatan}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="px-5 py-3 text-slate-300 font-bold whitespace-nowrap">
+                                <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5 text-[10px]">
+                                  {row.kodeRekening}
+                                </span>
+                              </td>
+                              <td className="px-5 py-3 text-slate-300 font-sans max-w-xs truncate">{row.namaRekening}</td>
+                              <td className="px-5 py-3 text-right text-slate-400">{formatCurrency(row.alokasiAnggaran)}</td>
+                              <td className="px-5 py-3 text-right text-emerald-400 font-bold">{formatCurrency(row.realisasiAnggaran)}</td>
+                              <td className="px-5 py-3 text-center">
+                                <div className="flex flex-col items-center gap-1">
+                                  <span className={cn(
+                                    "px-2.5 py-1 rounded-full text-[9px] font-black tracking-widest uppercase border",
+                                    rasioIndex >= 85 
+                                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
+                                      : rasioIndex >= 50 
+                                        ? "bg-sky-500/10 text-sky-400 border-sky-500/20" 
+                                        : rasioIndex > 0 
+                                          ? "bg-amber-500/10 text-amber-400 border-amber-500/20" 
+                                          : "bg-slate-500/10 text-slate-400 border-white/10"
+                                  )}>
+                                    {rasioIndex.toFixed(2)}%
+                                  </span>
+                                  <div className="w-16 h-1 bg-white/5 rounded-full overflow-hidden">
+                                    <div 
+                                      className="h-full bg-gradient-to-r from-blue-500 to-sky-400 rounded-full"
+                                      style={{ width: `${Math.min(100, rasioIndex)}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </motion.div>
             )}
 

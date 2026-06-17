@@ -30,6 +30,34 @@ export interface SikdAllocationRecord {
   rasio: number;         // Rasio (%)
 }
 
+export interface SipdRealizationRecord {
+  id?: string;
+  idDaerah: string;
+  tahun: string;
+  kodeUrusan: string;
+  namaUrusan: string;
+  kodeBidangUrusan: string;
+  namaBidangUrusan: string;
+  kodeFungsi: string;
+  namaFungsi: string;
+  kodeSubFungsi: string;
+  namaSubFungsi: string;
+  kodeSkpd: string;
+  namaSkpd: string;
+  kodeSubSkpd: string;
+  namaSubSkpd: string;
+  kodeProgram: string;
+  namaProgram: string;
+  kodeKegiatan: string;
+  namaKegiatan: string;
+  kodeSubKegiatan: string;
+  namaSubKegiatan: string;
+  kodeRekening: string;
+  namaRekening: string;
+  alokasiAnggaran: number;
+  realisasiAnggaran: number;
+}
+
 export interface DashboardStats {
   totalAnggaran: number;
   totalRealisasi: number;

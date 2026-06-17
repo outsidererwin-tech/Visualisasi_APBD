@@ -40,11 +40,14 @@ export default function App() {
     importNewData,
     importNewSikdData,
     importNewSikdAllocationData,
+    importNewSipdRealizationData,
     resetToMockData,
     resetSikdToMockData,
     resetSikdAllocationToMockData,
+    resetSipdRealizationToMockData,
     sikdData,
-    sikdAllocationData
+    sikdAllocationData,
+    sipdRealizationData
   } = useAPBDData();
 
   const [searchQuery, setSearchQuery] = useState('');
